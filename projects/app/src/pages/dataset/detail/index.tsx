@@ -1,203 +1,141 @@
-import React, { useCallback, useRef } from 'react';
+import React from 'react';
 import { useRouter } from 'next/router';
-import { Box, Flex, IconButton, useTheme } from '@chakra-ui/react';
-import { useToast } from '@/web/common/hooks/useToast';
-import { useForm } from 'react-hook-form';
-import { useQuery } from '@tanstack/react-query';
-import type { DatasetItemType } from '@fastgpt/global/core/dataset/type.d';
+import { Box, Flex, FlexProps } from '@chakra-ui/react';
+import { useToast } from '@fastgpt/web/hooks/useToast';
 import { getErrText } from '@fastgpt/global/common/error/utils';
-import { useSystemStore } from '@/web/common/system/useSystemStore';
-import { type ComponentRef } from './components/Info';
-import Tabs from '@/components/Tabs';
 import dynamic from 'next/dynamic';
-import MyIcon from '@/components/Icon';
-import SideTabs from '@/components/SideTabs';
 import PageContainer from '@/components/PageContainer';
-import Avatar from '@/components/Avatar';
-import Info from './components/Info';
-import { serviceSideProps } from '@/web/common/utils/i18n';
+import { serviceSideProps } from '@fastgpt/web/common/system/nextjs';
 import { useTranslation } from 'next-i18next';
-import { getTrainingQueueLen } from '@/web/core/dataset/api';
-import MyTooltip from '@/components/MyTooltip';
-import { QuestionOutlineIcon } from '@chakra-ui/icons';
-import { feConfigs } from '@/web/common/system/staticData';
-import Script from 'next/script';
-import CollectionCard from './components/CollectionCard';
-import { useDatasetStore } from '@/web/core/dataset/store/dataset';
-import { useUserStore } from '@/web/support/user/useUserStore';
+import MetaDataCard from './components/MetaDataCard';
+import NavBar from './components/NavBar';
+import MyBox from '@fastgpt/web/components/common/MyBox';
+import {
+  DatasetPageContext,
+  DatasetPageContextProvider
+} from '@/web/core/dataset/context/datasetPageContext';
+import CollectionPageContextProvider from './components/CollectionCard/Context';
+import { useContextSelector } from 'use-context-selector';
+import NextHead from '@/components/common/NextHead';
+import { useRequest2 } from '@fastgpt/web/hooks/useRequest';
+import { useSystem } from '@fastgpt/web/hooks/useSystem';
 
-const DataCard = dynamic(() => import('./components/DataCard'), {
-  ssr: false
-});
-const Test = dynamic(() => import('./components/Test'), {
-  ssr: false
-});
+const CollectionCard = dynamic(() => import('./components/CollectionCard/index'));
+const DataCard = dynamic(() => import('./components/DataCard'));
+const Test = dynamic(() => import('./components/Test'));
+const Info = dynamic(() => import('./components/Info/index'));
+const Import = dynamic(() => import('./components/Import'));
 
 export enum TabEnum {
   dataCard = 'dataCard',
   collectionCard = 'collectionCard',
   test = 'test',
-  info = 'info'
+  info = 'info',
+  import = 'import'
 }
+type Props = { datasetId: string; currentTab: TabEnum };
 
-const Detail = ({ datasetId, currentTab }: { datasetId: string; currentTab: `${TabEnum}` }) => {
-  const InfoRef = useRef<ComponentRef>(null);
-  const theme = useTheme();
+const sliderStyles: FlexProps = {
+  bg: 'white',
+  borderRadius: 'md',
+  overflowY: 'scroll',
+  boxShadow: 2
+};
+
+const Detail = ({ datasetId, currentTab }: Props) => {
   const { t } = useTranslation();
   const { toast } = useToast();
   const router = useRouter();
-  const { isPc } = useSystemStore();
-  const { datasetDetail, loadDatasetDetail } = useDatasetStore();
-  const { userInfo } = useUserStore();
+  const { isPc } = useSystem();
+  const datasetDetail = useContextSelector(DatasetPageContext, (v) => v.datasetDetail);
+  const loadDatasetDetail = useContextSelector(DatasetPageContext, (v) => v.loadDatasetDetail);
 
-  const tabList = [
-    { label: '数据集', id: TabEnum.collectionCard, icon: 'overviewLight' },
-    { label: '搜索测试', id: TabEnum.test, icon: 'kbTest' },
-    ...(userInfo?.team.canWrite && datasetDetail.isOwner
-      ? [{ label: '配置', id: TabEnum.info, icon: 'settingLight' }]
-      : [])
-  ];
-
-  const setCurrentTab = useCallback(
-    (tab: `${TabEnum}`) => {
-      router.replace({
-        query: {
-          datasetId,
-          currentTab: tab
-        }
-      });
-    },
-    [datasetId, router]
-  );
-
-  const form = useForm<DatasetItemType>({
-    defaultValues: datasetDetail
-  });
-
-  useQuery([datasetId], () => loadDatasetDetail(datasetId), {
-    onSuccess(res) {
-      form.reset(res);
-      InfoRef.current?.initInput(res.tags?.join(' '));
-    },
+  useRequest2(() => loadDatasetDetail(datasetId), {
     onError(err: any) {
       router.replace(`/dataset/list`);
       toast({
-        title: getErrText(err, '获取知识库异常'),
+        title: t(getErrText(err, t('common:common.Load Failed')) as any),
         status: 'error'
       });
-    }
-  });
-
-  const { data: trainingQueueLen = 0 } = useQuery(['getTrainingQueueLen'], getTrainingQueueLen, {
-    refetchInterval: 10000
+    },
+    manual: false
   });
 
   return (
     <>
-      <Script src="/js/pdf.js" strategy="lazyOnload"></Script>
-      <PageContainer>
-        <Flex flexDirection={['column', 'row']} h={'100%'} pt={[4, 0]}>
-          {isPc ? (
-            <Flex
-              flexDirection={'column'}
-              p={4}
-              h={'100%'}
-              flex={'0 0 200px'}
-              borderRight={theme.borders.base}
-            >
-              <Flex mb={4} alignItems={'center'}>
-                <Avatar src={datasetDetail.avatar} w={'34px'} borderRadius={'lg'} />
-                <Box ml={2} fontWeight={'bold'}>
-                  {datasetDetail.name}
-                </Box>
-              </Flex>
-              <SideTabs
-                flex={1}
-                mx={'auto'}
-                mt={2}
-                w={'100%'}
-                list={tabList}
-                activeId={currentTab}
-                onChange={(e: any) => {
-                  setCurrentTab(e);
-                }}
-              />
-              <Box textAlign={'center'}>
-                <Flex justifyContent={'center'} alignItems={'center'}>
-                  <MyIcon mr={1} name="overviewLight" w={'16px'} color={'green.500'} />
-                  <Box>{t('dataset.System Data Queue')}</Box>
-                  <MyTooltip
-                    label={t('dataset.Queue Desc', { title: feConfigs?.systemTitle })}
-                    placement={'top'}
-                  >
-                    <QuestionOutlineIcon ml={1} w={'16px'} />
-                  </MyTooltip>
-                </Flex>
-                <Box mt={1} fontWeight={'bold'}>
-                  {trainingQueueLen}
-                </Box>
-              </Box>
-              <Flex
-                alignItems={'center'}
-                cursor={'pointer'}
-                py={2}
-                px={3}
-                borderRadius={'md'}
-                _hover={{ bg: 'myGray.100' }}
-                onClick={() => router.replace('/dataset/list')}
-              >
-                <IconButton
-                  mr={3}
-                  icon={<MyIcon name={'backFill'} w={'18px'} color={'myBlue.600'} />}
-                  bg={'white'}
-                  boxShadow={'1px 1px 9px rgba(0,0,0,0.15)'}
-                  h={'28px'}
-                  size={'sm'}
-                  borderRadius={'50%'}
-                  aria-label={''}
-                />
-                全部知识库
-              </Flex>
-            </Flex>
-          ) : (
-            <Box mb={3}>
-              <Tabs
-                m={'auto'}
-                w={'260px'}
-                size={isPc ? 'md' : 'sm'}
-                list={tabList.map((item) => ({
-                  id: item.id,
-                  label: item.label
-                }))}
-                activeId={currentTab}
-                onChange={(e: any) => setCurrentTab(e)}
-              />
-            </Box>
-          )}
+      <NextHead title={datasetDetail?.name} icon={datasetDetail?.avatar} />
 
-          {!!datasetDetail._id && (
-            <Box flex={'1 0 0'} pb={[4, 0]}>
-              {currentTab === TabEnum.collectionCard && <CollectionCard />}
-              {currentTab === TabEnum.dataCard && <DataCard />}
-              {currentTab === TabEnum.test && <Test datasetId={datasetId} />}
-              {currentTab === TabEnum.info && (
-                <Info ref={InfoRef} datasetId={datasetId} form={form} />
+      {isPc ? (
+        <Flex h={'100%'} py={3} pl={1} pr={3} gap={2}>
+          <Flex flex={1} w={0} bg={'white'} flexDir={'column'} boxShadow={'2'} borderRadius={'md'}>
+            {currentTab !== TabEnum.import && <NavBar currentTab={currentTab} />}
+            <Box flex={'1'} overflowY={'auto'}>
+              {currentTab === TabEnum.collectionCard && (
+                <CollectionPageContextProvider>
+                  <CollectionCard />
+                </CollectionPageContextProvider>
               )}
+              {currentTab === TabEnum.test && <Test datasetId={datasetId} />}
+              {currentTab === TabEnum.dataCard && <DataCard />}
+              {currentTab === TabEnum.import && <Import />}
             </Box>
-          )}
+          </Flex>
+
+          {/* Slider */}
+          <>
+            {currentTab === TabEnum.dataCard && (
+              <Flex {...sliderStyles} flex={'0 0 20rem'}>
+                <MetaDataCard datasetId={datasetId} />
+              </Flex>
+            )}
+            {[TabEnum.collectionCard, TabEnum.test].includes(currentTab) && (
+              <Flex {...sliderStyles} flex={'0 0 17rem'}>
+                <Info datasetId={datasetId} />
+              </Flex>
+            )}
+          </>
         </Flex>
-      </PageContainer>
+      ) : (
+        <PageContainer insertProps={{ bg: 'white' }}>
+          <MyBox display={'flex'} flexDirection={'column'} h={'100%'} pt={1}>
+            <NavBar currentTab={currentTab} />
+
+            {!!datasetDetail._id && (
+              <Box flex={'1 0 0'} pb={0} overflow={'auto'}>
+                {currentTab === TabEnum.collectionCard && (
+                  <CollectionPageContextProvider>
+                    <CollectionCard />
+                  </CollectionPageContextProvider>
+                )}
+                {currentTab === TabEnum.dataCard && <DataCard />}
+                {currentTab === TabEnum.test && <Test datasetId={datasetId} />}
+                {currentTab === TabEnum.info && <Info datasetId={datasetId} />}
+                {currentTab === TabEnum.import && <Import />}
+              </Box>
+            )}
+          </MyBox>
+        </PageContainer>
+      )}
     </>
   );
 };
+
+const Render = (data: Props) => (
+  <DatasetPageContextProvider datasetId={data.datasetId}>
+    <Detail {...data} />
+  </DatasetPageContextProvider>
+);
+export default Render;
 
 export async function getServerSideProps(context: any) {
   const currentTab = context?.query?.currentTab || TabEnum.collectionCard;
   const datasetId = context?.query?.datasetId;
 
   return {
-    props: { currentTab, datasetId, ...(await serviceSideProps(context)) }
+    props: {
+      currentTab,
+      datasetId,
+      ...(await serviceSideProps(context, ['dataset', 'file', 'user']))
+    }
   };
 }
-
-export default React.memo(Detail);

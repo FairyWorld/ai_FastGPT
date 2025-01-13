@@ -3,9 +3,12 @@ import {
   ChatModelItemType,
   FunctionModelItemType,
   LLMModelItemType,
-  VectorModelItemType
+  ReRankModelItemType,
+  VectorModelItemType,
+  STTModelType
 } from '@fastgpt/global/core/ai/model.d';
-import { TrackEventName } from '@/constants/common';
+import { TrackEventName } from '@/web/common/system/constants';
+import { SubPlanType } from '@fastgpt/global/support/wallet/sub/type';
 
 export type PagingData<T> = {
   pageNum: number;
@@ -20,23 +23,11 @@ declare global {
   var qaQueueLen: number;
   var vectorQueueLen: number;
 
-  var vectorModels: VectorModelItemType[];
-  var chatModels: ChatModelItemType[];
-  var qaModels: LLMModelItemType[];
-  var cqModels: FunctionModelItemType[];
-  var extractModels: FunctionModelItemType[];
-  var qgModels: LLMModelItemType[];
-  var audioSpeechModels: AudioSpeechModelType[];
-
-  var priceMd: string;
-  var systemVersion: string;
-
   interface Window {
-    ['pdfjs-dist/build/pdf']: any;
     grecaptcha: any;
     QRCode: any;
     umami?: {
-      track: (event: `${TrackEventName}`, data: any) => void;
+      track: (event: TrackEventName, data: any) => void;
     };
   }
 }

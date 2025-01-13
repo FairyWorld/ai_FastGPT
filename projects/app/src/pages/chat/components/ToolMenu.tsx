@@ -1,64 +1,81 @@
-import React, { useMemo } from 'react';
-import { useChatBox } from '@/components/ChatBox';
+import React from 'react';
+import { useChatBox } from '@/components/core/chat/ChatContainer/ChatBox/hooks/useChatBox';
 import type { ChatItemType } from '@fastgpt/global/core/chat/type.d';
-import { Menu, MenuButton, MenuList, MenuItem, Box } from '@chakra-ui/react';
-import MyIcon from '@/components/Icon';
-import { useRouter } from 'next/router';
+import { Box, IconButton } from '@chakra-ui/react';
+import { useTranslation } from 'next-i18next';
+import MyIcon from '@fastgpt/web/components/common/Icon';
+import MyMenu from '@fastgpt/web/components/common/MyMenu';
+import { useContextSelector } from 'use-context-selector';
+import { ChatContext } from '@/web/core/chat/context/chatContext';
 
-const ToolMenu = ({ history }: { history: ChatItemType[] }) => {
+const ToolMenu = ({
+  history,
+  onRouteToAppDetail
+}: {
+  history: ChatItemType[];
+  onRouteToAppDetail?: () => void;
+}) => {
+  const { t } = useTranslation();
   const { onExportChat } = useChatBox();
-  const router = useRouter();
 
-  const menuList = useMemo(
-    () => [
-      {
-        icon: 'chat',
-        label: '新对话',
-        onClick: () => {
-          router.replace({
-            query: {
-              ...router.query,
-              chatId: ''
-            }
-          });
-        }
-      },
-      {
-        icon: 'apiLight',
-        label: 'HTML导出',
-        onClick: () => onExportChat({ type: 'html', history })
-      },
-      {
-        icon: 'markdown',
-        label: 'Markdown导出',
-        onClick: () => onExportChat({ type: 'md', history })
-      },
-      { icon: 'pdf', label: 'PDF导出', onClick: () => onExportChat({ type: 'pdf', history }) }
-    ],
-    [history, onExportChat, router]
-  );
+  const onChangeChatId = useContextSelector(ChatContext, (v) => v.onChangeChatId);
 
   return history.length > 0 ? (
-    <Menu autoSelect={false} isLazy>
-      <MenuButton
-        _hover={{ bg: 'myWhite.600  ' }}
-        cursor={'pointer'}
-        borderRadius={'md'}
-        onClick={(e) => {
-          e.stopPropagation();
-        }}
-      >
-        <MyIcon name={'more'} w={'14px'} p={2} />
-      </MenuButton>
-      <MenuList color={'myGray.700'} minW={`120px !important`} zIndex={10}>
-        {menuList.map((item) => (
-          <MenuItem key={item.label} onClick={item.onClick} py={[2, 3]}>
-            <MyIcon name={item.icon as any} w={['14px', '16px']} />
-            <Box ml={[1, 2]}>{item.label}</Box>
-          </MenuItem>
-        ))}
-      </MenuList>
-    </Menu>
+    <MyMenu
+      Button={
+        <IconButton
+          icon={<MyIcon name={'more'} w={'14px'} p={2} />}
+          aria-label={''}
+          size={'sm'}
+          variant={'whitePrimary'}
+        />
+      }
+      menuList={[
+        {
+          children: [
+            {
+              icon: 'core/chat/chatLight',
+              label: t('common:core.chat.New Chat'),
+              onClick: () => {
+                onChangeChatId();
+              }
+            }
+          ]
+        },
+        {
+          children: [
+            // {
+            //   icon: 'core/app/appApiLight',
+            //   label: `HTML ${t('common:Export')}`,
+            //   onClick: () => onExportChat({ type: 'html', history })
+            // },
+            {
+              icon: 'file/markdown',
+              label: `Markdown ${t('common:Export')}`,
+              onClick: () => onExportChat({ type: 'md', history })
+            }
+            // {
+            //   icon: 'core/chat/export/pdf',
+            //   label: `PDF ${t('common:Export')}`,
+            //   onClick: () => onExportChat({ type: 'pdf', history })
+            // }
+          ]
+        },
+        ...(onRouteToAppDetail
+          ? [
+              {
+                children: [
+                  {
+                    icon: 'core/app/aiLight',
+                    label: t('app:app_detail'),
+                    onClick: onRouteToAppDetail
+                  }
+                ]
+              }
+            ]
+          : [])
+      ]}
+    />
   ) : (
     <Box w={'28px'} h={'28px'} />
   );

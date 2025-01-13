@@ -1,67 +1,88 @@
-import type { NextApiRequest, NextApiResponse } from 'next';
+import type { NextApiResponse } from 'next';
 import { jsonRes } from '@fastgpt/service/common/response';
 import { connectToDatabase } from '@/service/mongo';
-import { MongoChatItem } from '@fastgpt/service/core/chat/chatItemSchema';
 import { GetChatSpeechProps } from '@/global/core/chat/api.d';
 import { text2Speech } from '@fastgpt/service/core/ai/audio/speech';
-import { pushAudioSpeechBill } from '@/service/support/wallet/bill/push';
-import { authCert } from '@fastgpt/service/support/permission/auth/common';
-import { authType2BillSource } from '@/service/support/wallet/bill/utils';
+import { pushAudioSpeechUsage } from '@/service/support/wallet/usage/push';
+import { authChatCrud } from '@/service/support/permission/auth/chat';
+import { authType2UsageSource } from '@/service/support/wallet/usage/utils';
+import { getAudioSpeechModel } from '@fastgpt/service/core/ai/model';
+import { MongoTTSBuffer } from '@fastgpt/service/common/buffer/tts/schema';
+import { ApiRequestProps } from '@fastgpt/service/type/next';
 
 /* 
 1. get tts from chatItem store
 2. get tts from ai
-3. save tts to chatItem store if chatItemId is provided
 4. push bill
 */
-
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: ApiRequestProps<GetChatSpeechProps>, res: NextApiResponse) {
   try {
     await connectToDatabase();
-    const { chatItemId, ttsConfig, input } = req.body as GetChatSpeechProps;
+    const { ttsConfig, input } = req.body;
 
-    const { teamId, tmbId, authType } = await authCert({ req, authToken: true });
-
-    const chatItem = await (async () => {
-      if (!chatItemId) return null;
-      return await MongoChatItem.findOne(
-        {
-          dataId: chatItemId
-        },
-        'tts'
-      );
-    })();
-
-    if (chatItem?.tts) {
-      return jsonRes(res, {
-        data: chatItem.tts
-      });
+    if (!ttsConfig.model || !ttsConfig.voice) {
+      throw new Error('model or voice not found');
     }
 
-    const { tts, model } = await text2Speech({
+    const { teamId, tmbId, authType } = await authChatCrud({
+      req,
+      authToken: true,
+      authApiKey: true,
+      ...req.body
+    });
+
+    const ttsModel = getAudioSpeechModel(ttsConfig.model);
+    const voiceData = ttsModel.voices?.find((item) => item.value === ttsConfig.voice);
+
+    if (!voiceData) {
+      throw new Error('voice not found');
+    }
+
+    /* get audio from buffer */
+    const ttsBuffer = await MongoTTSBuffer.findOne(
+      {
+        bufferId: voiceData.bufferId,
+        text: JSON.stringify({ text: input, speed: ttsConfig.speed })
+      },
+      'buffer'
+    );
+
+    if (ttsBuffer?.buffer) {
+      return res.end(new Uint8Array(ttsBuffer.buffer.buffer));
+    }
+
+    /* request audio */
+    await text2Speech({
+      res,
+      input,
       model: ttsConfig.model,
       voice: ttsConfig.voice,
-      input
-    });
+      speed: ttsConfig.speed,
+      onSuccess: async ({ model, buffer }) => {
+        try {
+          /* bill */
+          pushAudioSpeechUsage({
+            model: model,
+            charsLength: input.length,
+            tmbId,
+            teamId,
+            source: authType2UsageSource({ authType })
+          });
 
-    (async () => {
-      if (!chatItem) return;
-      try {
-        chatItem.tts = tts;
-        await chatItem.save();
-      } catch (error) {}
-    })();
-
-    jsonRes(res, {
-      data: tts
-    });
-
-    pushAudioSpeechBill({
-      model: model,
-      textLength: input.length,
-      tmbId,
-      teamId,
-      source: authType2BillSource({ authType })
+          /* create buffer */
+          await MongoTTSBuffer.create({
+            bufferId: voiceData.bufferId,
+            text: JSON.stringify({ text: input, speed: ttsConfig.speed }),
+            buffer
+          });
+        } catch (error) {}
+      },
+      onError: (err) => {
+        jsonRes(res, {
+          code: 500,
+          error: err
+        });
+      }
     });
   } catch (err) {
     jsonRes(res, {
@@ -70,3 +91,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
   }
 }
+
+// 不能使用 NextApiResponse
+export default handler;

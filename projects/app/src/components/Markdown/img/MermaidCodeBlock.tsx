@@ -1,8 +1,7 @@
-import React, { useEffect, useRef, memo, useCallback, useState, useMemo } from 'react';
+import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { Box } from '@chakra-ui/react';
-// @ts-ignore
 import mermaid from 'mermaid';
-import MyIcon from '../../Icon';
+import MyIcon from '@fastgpt/web/components/common/Icon';
 
 const mermaidAPI = mermaid.mermaidAPI;
 mermaidAPI.initialize({
@@ -123,7 +122,7 @@ const MermaidBlock = ({ code }: { code: string }) => {
         position={'absolute'}
         color={'myGray.600'}
         _hover={{
-          color: 'myBlue.700'
+          color: 'primary.600'
         }}
         right={0}
         top={0}

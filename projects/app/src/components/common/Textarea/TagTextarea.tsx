@@ -9,7 +9,7 @@ import {
   TagLabel,
   useTheme
 } from '@chakra-ui/react';
-import { useToast } from '@/web/common/hooks/useToast';
+import { useToast } from '@fastgpt/web/hooks/useToast';
 import { useTranslation } from 'next-i18next';
 
 type Props = BoxProps & { defaultValues: string[]; onUpdate: (e: string[]) => void };
@@ -31,7 +31,7 @@ const TagTextarea = ({ defaultValues, onUpdate, ...props }: Props) => {
       if (tags.includes(value)) {
         return toast({
           status: 'warning',
-          title: t('common.input.Repeat Value')
+          title: t('common:common.input.Repeat Value')
         });
       }
       setTags([...tags, value]);
@@ -52,7 +52,7 @@ const TagTextarea = ({ defaultValues, onUpdate, ...props }: Props) => {
       bg={'myWhite.600'}
       {...(focus && {
         boxShadow: '0px 0px 4px #A8DBFF',
-        borderColor: 'myBlue.600'
+        borderColor: 'primary.500'
       })}
       {...props}
       onClick={() => {
@@ -64,7 +64,7 @@ const TagTextarea = ({ defaultValues, onUpdate, ...props }: Props) => {
     >
       <Flex alignItems={'center'} gap={2} flexWrap={'wrap'}>
         {tags.map((tag, i) => (
-          <Tag key={tag} colorScheme="blue" onClick={(e) => e.stopPropagation()}>
+          <Tag key={tag} colorScheme="primary" onClick={(e) => e.stopPropagation()}>
             <TagLabel>{tag}</TagLabel>
             <TagCloseButton
               onClick={() => {
@@ -79,6 +79,8 @@ const TagTextarea = ({ defaultValues, onUpdate, ...props }: Props) => {
           ref={InputRef}
           variant={'unstyled'}
           display={'inline-block'}
+          h={'24px'}
+          borderRadius={'none'}
           w="auto"
           onBlur={(e) => {
             const value = e.target.value;

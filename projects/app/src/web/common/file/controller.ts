@@ -1,26 +1,32 @@
 import { postUploadImg, postUploadFiles } from '@/web/common/file/api';
+import { UploadImgProps } from '@fastgpt/global/common/file/api';
 import { BucketNameEnum } from '@fastgpt/global/common/file/constants';
+import { preUploadImgProps } from '@fastgpt/global/common/file/api';
+import { compressBase64Img, type CompressImgProps } from '@fastgpt/web/common/file/img';
+import type { UploadChatFileProps, UploadDatasetFileProps } from '@/pages/api/common/file/upload';
 
 /**
  * upload file to mongo gridfs
  */
-export const uploadFiles = ({
-  files,
+export const uploadFile2DB = ({
+  file,
   bucketName,
+  data,
   metadata = {},
   percentListen
 }: {
-  files: File[];
+  file: File;
   bucketName: `${BucketNameEnum}`;
+  data: UploadChatFileProps | UploadDatasetFileProps;
   metadata?: Record<string, any>;
   percentListen?: (percent: number) => void;
 }) => {
   const form = new FormData();
   form.append('metadata', JSON.stringify(metadata));
   form.append('bucketName', bucketName);
-  files.forEach((file) => {
-    form.append('file', file, encodeURIComponent(file.name));
-  });
+  form.append('file', file, encodeURIComponent(file.name));
+  form.append('data', JSON.stringify(data));
+
   return postUploadFiles(form, (e) => {
     if (!e.total) return;
 
@@ -33,72 +39,48 @@ export const uploadFiles = ({
  * compress image. response base64
  * @param maxSize The max size of the compressed image
  */
-export const compressImgAndUpload = ({
+const compressBase64ImgAndUpload = async ({
+  base64Img,
+  maxW,
+  maxH,
+  maxSize,
+  ...props
+}: UploadImgProps & CompressImgProps) => {
+  const compressUrl = await compressBase64Img({
+    base64Img,
+    maxW,
+    maxH,
+    maxSize
+  });
+
+  return postUploadImg({
+    ...props,
+    base64Img: compressUrl
+  });
+};
+
+export const compressImgFileAndUpload = async ({
   file,
-  maxW = 200,
-  maxH = 200,
-  maxSize = 1024 * 100
-}: {
-  file: File;
-  maxW?: number;
-  maxH?: number;
-  maxSize?: number;
-}) =>
-  new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = async () => {
-      const img = new Image();
-      // @ts-ignore
-      img.src = reader.result;
-      img.onload = async () => {
-        let width = img.width;
-        let height = img.height;
+  ...props
+}: preUploadImgProps &
+  CompressImgProps & {
+    file: File;
+  }) => {
+  const reader = new FileReader();
+  reader.readAsDataURL(file);
 
-        if (width > height) {
-          if (width > maxW) {
-            height *= maxW / width;
-            width = maxW;
-          }
-        } else {
-          if (height > maxH) {
-            width *= maxH / height;
-            height = maxH;
-          }
-        }
-
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-
-        if (!ctx) {
-          return reject('压缩图片异常');
-        }
-
-        ctx.drawImage(img, 0, 0, width, height);
-        const compressedDataUrl = canvas.toDataURL(file.type, 0.8);
-        // 移除 canvas 元素
-        canvas.remove();
-
-        if (compressedDataUrl.length > maxSize) {
-          return reject('图片太大了');
-        }
-
-        const src = await (async () => {
-          try {
-            const src = await postUploadImg(compressedDataUrl);
-            return src;
-          } catch (error) {
-            return compressedDataUrl;
-          }
-        })();
-
-        resolve(src);
-      };
+  const base64Img = await new Promise<string>((resolve, reject) => {
+    reader.onload = () => {
+      resolve(reader.result as string);
     };
     reader.onerror = (err) => {
       console.log(err);
-      reject('压缩图片异常');
+      reject('Load image error');
     };
   });
+
+  return compressBase64ImgAndUpload({
+    base64Img,
+    ...props
+  });
+};

@@ -1,50 +1,96 @@
-import type { VectorModelItemType } from '../../core/ai/model.d';
+import type { LLMModelItemType, VectorModelItemType } from '../../core/ai/model.d';
 import { PermissionTypeEnum } from '../../support/permission/constant';
 import { PushDatasetDataChunkProps } from './api';
 import {
   DatasetCollectionTypeEnum,
-  DatasetDataIndexTypeEnum,
+  DatasetStatusEnum,
   DatasetTypeEnum,
+  SearchScoreTypeEnum,
   TrainingModeEnum
-} from './constant';
+} from './constants';
+import { DatasetPermission } from '../../support/permission/dataset/controller';
+import { Permission } from '../../support/permission/controller';
+import { APIFileServer, FeishuServer, YuqueServer } from './apiDataset';
 
-/* schema */
 export type DatasetSchemaType = {
   _id: string;
-  parentId: string;
+  parentId?: string;
   userId: string;
   teamId: string;
   tmbId: string;
   updateTime: Date;
+
   avatar: string;
   name: string;
   vectorModel: string;
-  tags: string[];
+  agentModel: string;
+  intro: string;
   type: `${DatasetTypeEnum}`;
-  permission: `${PermissionTypeEnum}`;
+  status: `${DatasetStatusEnum}`;
+  websiteConfig?: {
+    url: string;
+    selector: string;
+  };
+  inheritPermission: boolean;
+  apiServer?: APIFileServer;
+  feishuServer?: FeishuServer;
+  yuqueServer?: YuqueServer;
+
+  autoSync?: boolean;
+
+  // abandon
+  externalReadUrl?: string;
+  defaultPermission?: number;
 };
 
 export type DatasetCollectionSchemaType = {
   _id: string;
-  userId: string;
   teamId: string;
   tmbId: string;
   datasetId: string;
   parentId?: string;
   name: string;
-  type: `${DatasetCollectionTypeEnum}`;
+  type: DatasetCollectionTypeEnum;
+  createTime: Date;
   updateTime: Date;
-  metadata: {
-    fileId?: string;
-    rawLink?: string;
-    pgCollectionId?: string;
+  forbid?: boolean;
+
+  trainingType: TrainingModeEnum;
+  chunkSize: number;
+  chunkSplitter?: string;
+  qaPrompt?: string;
+  ocrParse?: boolean;
+
+  tags?: string[];
+
+  fileId?: string; // local file id
+  rawLink?: string; // link url
+  externalFileId?: string; //external file id
+  apiFileId?: string; // api file id
+  externalFileUrl?: string; // external import url
+
+  nextSyncTime?: Date;
+
+  rawTextLength?: number;
+  hashRawText?: string;
+  metadata?: {
+    webPageSelector?: string;
+    relatedImgId?: string; // The id of the associated image collections
+
+    [key: string]: any;
   };
+};
+
+export type DatasetCollectionTagsSchemaType = {
+  _id: string;
+  teamId: string;
+  datasetId: string;
+  tag: string;
 };
 
 export type DatasetDataIndexItemType = {
   defaultIndex: boolean;
   dataId: string; // pg data id
-  type: `${DatasetDataIndexTypeEnum}`;
   text: string;
 };
 export type DatasetDataSchemaType = {
@@ -56,9 +102,23 @@ export type DatasetDataSchemaType = {
   collectionId: string;
   datasetId: string;
   collectionId: string;
+  chunkIndex: number;
+  updateTime: Date;
   q: string; // large chunks or question
   a: string; // answer or custom content
+  forbid?: boolean;
+  fullTextToken: string;
   indexes: DatasetDataIndexItemType[];
+  rebuilding?: boolean;
+};
+
+export type DatasetDataTextSchemaType = {
+  _id: string;
+  teamId: string;
+  datasetId: string;
+  collectionId: string;
+  dataId: string;
+  fullTextToken: string;
 };
 
 export type DatasetTrainingSchemaType = {
@@ -71,44 +131,82 @@ export type DatasetTrainingSchemaType = {
   billId: string;
   expireAt: Date;
   lockTime: Date;
-  mode: `${TrainingModeEnum}`;
+  mode: TrainingModeEnum;
   model: string;
   prompt: string;
+  dataId?: string;
   q: string;
   a: string;
+  chunkIndex: number;
+  weight: number;
   indexes: Omit<DatasetDataIndexItemType, 'dataId'>[];
 };
 
-export type CollectionWithDatasetType = Omit<DatasetCollectionSchemaType, 'datasetId'> & {
-  datasetId: DatasetSchemaType;
+export type CollectionWithDatasetType = DatasetCollectionSchemaType & {
+  dataset: DatasetSchemaType;
 };
 
 /* ================= dataset ===================== */
-export type DatasetItemType = Omit<DatasetSchemaType, 'vectorModel'> & {
+export type DatasetSimpleItemType = {
+  _id: string;
+  avatar: string;
+  name: string;
   vectorModel: VectorModelItemType;
-  isOwner: boolean;
-  canWrite: boolean;
+};
+export type DatasetListItemType = {
+  _id: string;
+  tmbId: string;
+  avatar: string;
+  updateTime: Date;
+  name: string;
+  intro: string;
+  type: `${DatasetTypeEnum}`;
+  permission: DatasetPermission;
+  vectorModel: VectorModelItemType;
+  inheritPermission: boolean;
+  private?: boolean;
+};
+
+export type DatasetItemType = Omit<DatasetSchemaType, 'vectorModel' | 'agentModel'> & {
+  vectorModel: VectorModelItemType;
+  agentModel: LLMModelItemType;
+  permission: DatasetPermission;
+};
+
+/* ================= tag ===================== */
+export type DatasetTagType = {
+  _id: string;
+  tag: string;
+};
+
+export type TagUsageType = {
+  tagId: string;
+  collections: string[];
 };
 
 /* ================= collection ===================== */
 export type DatasetCollectionItemType = CollectionWithDatasetType & {
-  canWrite: boolean;
   sourceName: string;
   sourceId?: string;
+  file?: DatasetFileSchema;
+  permission: DatasetPermission;
 };
 
 /* ================= data ===================== */
 export type DatasetDataItemType = {
   id: string;
+  teamId: string;
   datasetId: string;
+  updateTime: Date;
   collectionId: string;
   sourceName: string;
   sourceId?: string;
   q: string;
   a: string;
+  chunkIndex: number;
   indexes: DatasetDataIndexItemType[];
   isOwner: boolean;
-  canWrite: boolean;
+  // permission: DatasetPermission;
 };
 
 /* --------------- file ---------------------- */
@@ -120,14 +218,18 @@ export type DatasetFileSchema = {
   filename: string;
   contentType: string;
   metadata: {
-    contentType: string;
-    datasetId: string;
     teamId: string;
-    tmbId: string;
+    tmbId?: string;
+    uid: string;
+    encoding?: string;
   };
 };
 
 /* ============= search =============== */
-export type SearchDataResponseItemType = DatasetDataItemType & {
-  score: number;
+export type SearchDataResponseItemType = Omit<
+  DatasetDataItemType,
+  'teamId' | 'indexes' | 'isOwner'
+> & {
+  score: { type: `${SearchScoreTypeEnum}`; value: number; index: number }[];
+  // score: number;
 };

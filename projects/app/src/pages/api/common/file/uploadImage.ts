@@ -1,27 +1,30 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { jsonRes } from '@fastgpt/service/common/response';
 import { connectToDatabase } from '@/service/mongo';
-import { authCert } from '@fastgpt/service/support/permission/auth/common';
 import { uploadMongoImg } from '@fastgpt/service/common/file/image/controller';
+import { UploadImgProps } from '@fastgpt/global/common/file/api';
+import { authCert } from '@fastgpt/service/support/permission/auth/common';
+import { NextAPI } from '@/service/middleware/entry';
 
-type Props = { base64Img: string };
+/* 
+  Upload avatar image
+*/
+async function handler(req: NextApiRequest, res: NextApiResponse): Promise<string> {
+  await connectToDatabase();
+  const body = req.body as UploadImgProps;
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  try {
-    await connectToDatabase();
-    const { userId } = await authCert({ req, authToken: true });
-    const { base64Img } = req.body as Props;
+  const { teamId } = await authCert({ req, authToken: true });
 
-    const data = await uploadMongoImg({
-      userId,
-      base64Img
-    });
-
-    jsonRes(res, { data });
-  } catch (error) {
-    jsonRes(res, {
-      code: 500,
-      error
-    });
-  }
+  return uploadMongoImg({
+    teamId,
+    ...body
+  });
 }
+export default NextAPI(handler);
+
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '12mb'
+    }
+  }
+};

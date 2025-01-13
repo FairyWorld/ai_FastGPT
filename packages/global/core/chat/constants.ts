@@ -1,56 +1,79 @@
+import { i18nT } from '../../../web/i18n/utils';
+
 export enum ChatRoleEnum {
   System = 'System',
   Human = 'Human',
-  AI = 'AI',
-  Function = 'Function',
-  Tool = 'Tool'
+  AI = 'AI'
 }
-
-export enum TaskResponseKeyEnum {
-  'answerText' = 'answerText', //  answer module text key
-  'responseData' = 'responseData',
-  'history' = 'history'
-}
-
 export const ChatRoleMap = {
   [ChatRoleEnum.System]: {
-    name: '系统提示词'
+    name: '系统'
   },
   [ChatRoleEnum.Human]: {
     name: '用户'
   },
   [ChatRoleEnum.AI]: {
     name: 'AI'
-  },
-  [ChatRoleEnum.Function]: {
-    name: 'Function'
-  },
-  [ChatRoleEnum.Tool]: {
-    name: 'Tool'
   }
 };
+
+export enum ChatFileTypeEnum {
+  image = 'image',
+  file = 'file'
+}
+export enum ChatItemValueTypeEnum {
+  text = 'text',
+  file = 'file',
+  tool = 'tool',
+  interactive = 'interactive'
+}
 
 export enum ChatSourceEnum {
   test = 'test',
   online = 'online',
   share = 'share',
-  api = 'api'
+  api = 'api',
+  cronJob = 'cronJob',
+  team = 'team',
+  feishu = 'feishu',
+  official_account = 'official_account',
+  wecom = 'wecom'
 }
 
 export const ChatSourceMap = {
   [ChatSourceEnum.test]: {
-    name: 'chat.logs.test'
+    name: i18nT('common:core.chat.logs.test')
   },
   [ChatSourceEnum.online]: {
-    name: 'chat.logs.online'
+    name: i18nT('common:core.chat.logs.online')
   },
   [ChatSourceEnum.share]: {
-    name: 'chat.logs.share'
+    name: i18nT('common:core.chat.logs.share')
   },
   [ChatSourceEnum.api]: {
-    name: 'chat.logs.api'
+    name: i18nT('common:core.chat.logs.api')
+  },
+  [ChatSourceEnum.cronJob]: {
+    name: i18nT('chat:source_cronJob')
+  },
+  [ChatSourceEnum.team]: {
+    name: i18nT('common:core.chat.logs.team')
+  },
+  [ChatSourceEnum.feishu]: {
+    name: i18nT('common:core.chat.logs.feishu')
+  },
+  [ChatSourceEnum.official_account]: {
+    name: i18nT('common:core.chat.logs.official_account')
+  },
+  [ChatSourceEnum.wecom]: {
+    name: i18nT('common:core.chat.logs.wecom')
   }
 };
 
-export const HUMAN_ICON = `/icon/human.svg`;
-export const LOGO_ICON = `/icon/logo.svg`;
+export enum ChatStatusEnum {
+  loading = 'loading',
+  running = 'running',
+  finish = 'finish'
+}
+
+export const MARKDOWN_QUOTE_SIGN = 'QUOTE SIGN';

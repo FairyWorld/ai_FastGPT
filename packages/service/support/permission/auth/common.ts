@@ -1,7 +1,7 @@
-import { AuthUserTypeEnum } from '@fastgpt/global/support/permission/constant';
 import { parseHeaderCert } from '../controller';
 import { AuthModeType } from '../type';
-import { authOutLinkValid } from './outLink';
+import { SERVICE_LOCAL_HOST } from '../../../common/system/tools';
+import { ApiRequestProps } from '../../../type/next';
 
 export const authCert = async (props: AuthModeType) => {
   const result = await parseHeaderCert(props);
@@ -12,22 +12,10 @@ export const authCert = async (props: AuthModeType) => {
     canWrite: true
   };
 };
-export async function authCertAndShareId({
-  shareId,
-  ...props
-}: AuthModeType & { shareId?: string }) {
-  if (!shareId) {
-    return authCert(props);
+
+/* auth the request from local service */
+export const authRequestFromLocal = ({ req }: { req: ApiRequestProps }) => {
+  if (req.headers.host !== SERVICE_LOCAL_HOST) {
+    return Promise.reject('Invalid request');
   }
-
-  const { app } = await authOutLinkValid({ shareId });
-
-  return {
-    teamId: String(app.teamId),
-    tmbId: String(app.tmbId),
-    authType: AuthUserTypeEnum.outLink,
-    apikey: '',
-    isOwner: false,
-    canWrite: false
-  };
-}
+};

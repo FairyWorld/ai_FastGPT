@@ -1,20 +1,22 @@
 import type {
-  ChatModelItemType,
-  FunctionModelItemType,
   LLMModelItemType,
-  VectorModelItemType
+  VectorModelItemType,
+  AudioSpeechModels,
+  STTModelType,
+  ReRankModelItemType
 } from '@fastgpt/global/core/ai/model.d';
 
-import type { FeConfigsType } from '@fastgpt/global/common/system/types/index.d';
+import type { FastGPTFeConfigsType } from '@fastgpt/global/common/system/types/index.d';
+import { SubPlanType } from '@fastgpt/global/support/wallet/sub/type';
 
 export type InitDateResponse = {
-  chatModels: ChatModelItemType[];
-  qaModels: LLMModelItemType[];
-  cqModels: FunctionModelItemType[];
-  extractModels: FunctionModelItemType[];
-  qgModels: LLMModelItemType[];
+  bufferId?: string;
+  llmModels: LLMModelItemType[];
   vectorModels: VectorModelItemType[];
-  feConfigs: FeConfigsType;
-  priceMd: string;
+  audioSpeechModels: AudioSpeechModels[];
+  reRankModels: ReRankModelItemType[];
+  whisperModel: STTModelType;
+  feConfigs: FastGPTFeConfigsType;
+  subPlans?: SubPlanType;
   systemVersion: string;
 };
