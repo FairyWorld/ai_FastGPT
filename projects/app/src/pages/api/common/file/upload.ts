@@ -1,106 +1,107 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { jsonRes } from '@fastgpt/service/common/response';
-import { connectToDatabase } from '@/service/mongo';
-import { authCert } from '@fastgpt/service/support/permission/auth/common';
-import { customAlphabet } from 'nanoid';
-import multer from 'multer';
-import path from 'path';
 import { uploadFile } from '@fastgpt/service/common/file/gridfs/controller';
-import { BucketNameEnum } from '@fastgpt/global/common/file/constants';
+import { getUploadModel } from '@fastgpt/service/common/file/multer';
+import { removeFilesByPaths } from '@fastgpt/service/common/file/utils';
+import { NextAPI } from '@/service/middleware/entry';
+import { createFileToken } from '@fastgpt/service/support/permission/controller';
+import { ReadFileBaseUrl } from '@fastgpt/global/common/file/constants';
+import { addLog } from '@fastgpt/service/common/system/log';
+import { authFrequencyLimit } from '@/service/common/frequencyLimit/api';
+import { addSeconds } from 'date-fns';
+import { authChatCrud } from '@/service/support/permission/auth/chat';
+import { authDataset } from '@fastgpt/service/support/permission/dataset/auth';
+import { OutLinkChatAuthProps } from '@fastgpt/global/support/permission/chat';
+import { WritePermissionVal } from '@fastgpt/global/support/permission/constant';
 
-const nanoid = customAlphabet('1234567890abcdef', 12);
-
-type FileType = {
-  fieldname: string;
-  originalname: string;
-  encoding: string;
-  mimetype: string;
-  filename: string;
-  path: string;
-  size: number;
+export type UploadChatFileProps = {
+  appId: string;
+} & OutLinkChatAuthProps;
+export type UploadDatasetFileProps = {
+  datasetId: string;
 };
 
-/**
- * Creates the multer uploader
- */
-const maxSize = 500 * 1024 * 1024;
-class UploadModel {
-  uploader = multer({
-    limits: {
-      fieldSize: maxSize
-    },
-    preservePath: true,
-    storage: multer.diskStorage({
-      filename: (_req, file, cb) => {
-        const { ext } = path.parse(decodeURIComponent(file.originalname));
-        cb(null, nanoid() + ext);
-      }
-    })
-  }).any();
+const authUploadLimit = (tmbId: string) => {
+  if (!global.feConfigs.uploadFileMaxAmount) return;
+  return authFrequencyLimit({
+    eventId: `${tmbId}-uploadfile`,
+    maxAmount: global.feConfigs.uploadFileMaxAmount * 2,
+    expiredTime: addSeconds(new Date(), 30) // 30s
+  });
+};
 
-  async doUpload(req: NextApiRequest, res: NextApiResponse) {
-    return new Promise<{
-      files: FileType[];
-      bucketName: `${BucketNameEnum}`;
-      metadata: Record<string, any>;
-    }>((resolve, reject) => {
-      // @ts-ignore
-      this.uploader(req, res, (error) => {
-        if (error) {
-          return reject(error);
-        }
-
-        resolve({
-          ...req.body,
-          files:
-            // @ts-ignore
-            req.files?.map((file) => ({
-              ...file,
-              originalname: decodeURIComponent(file.originalname)
-            })) || [],
-          metadata: (() => {
-            if (!req.body?.metadata) return {};
-            try {
-              return JSON.parse(req.body.metadata);
-            } catch (error) {
-              console.log(error);
-
-              return {};
-            }
-          })()
-        });
-      });
-    });
-  }
-}
-
-const upload = new UploadModel();
-
-export default async function handler(req: NextApiRequest, res: NextApiResponse<any>) {
+async function handler(req: NextApiRequest, res: NextApiResponse<any>) {
+  const filePaths: string[] = [];
   try {
-    await connectToDatabase();
-    const { userId, teamId, tmbId } = await authCert({ req, authToken: true });
-    const { files, bucketName, metadata } = await upload.doUpload(req, res);
+    const start = Date.now();
+    /* Creates the multer uploader */
+    const upload = getUploadModel({
+      maxSize: global.feConfigs?.uploadFileMaxSize
+    });
+    const { file, bucketName, metadata, data } = await upload.doUpload<
+      UploadChatFileProps | UploadDatasetFileProps
+    >(req, res);
+    filePaths.push(file.path);
 
-    const upLoadResults = await Promise.all(
-      files.map((file) =>
-        uploadFile({
-          teamId,
-          tmbId,
-          bucketName,
-          path: file.path,
-          filename: file.originalname,
-          metadata: {
-            ...metadata,
-            contentType: file.mimetype,
-            userId
-          }
-        })
-      )
-    );
+    const { teamId, uid } = await (async () => {
+      if (bucketName === 'chat') {
+        const chatData = data as UploadChatFileProps;
+        const authData = await authChatCrud({
+          req,
+          authToken: true,
+          authApiKey: true,
+          ...chatData
+        });
+        return {
+          teamId: authData.teamId,
+          uid: authData.uid
+        };
+      }
+      if (bucketName === 'dataset') {
+        const chatData = data as UploadDatasetFileProps;
+        const authData = await authDataset({
+          datasetId: chatData.datasetId,
+          per: WritePermissionVal,
+          req,
+          authToken: true,
+          authApiKey: true
+        });
+        return {
+          teamId: authData.teamId,
+          uid: authData.tmbId
+        };
+      }
+      return Promise.reject('bucketName is empty');
+    })();
+
+    await authUploadLimit(uid);
+
+    addLog.info(`Upload file success ${file.originalname}, cost ${Date.now() - start}ms`);
+
+    if (!bucketName) {
+      throw new Error('bucketName is empty');
+    }
+
+    const fileId = await uploadFile({
+      teamId,
+      uid,
+      bucketName,
+      path: file.path,
+      filename: file.originalname,
+      contentType: file.mimetype,
+      metadata: metadata
+    });
 
     jsonRes(res, {
-      data: upLoadResults
+      data: {
+        fileId,
+        previewUrl: `${ReadFileBaseUrl}/${file.originalname}?token=${await createFileToken({
+          bucketName,
+          teamId,
+          uid,
+          fileId
+        })}`
+      }
     });
   } catch (error) {
     jsonRes(res, {
@@ -108,7 +109,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       error
     });
   }
+
+  removeFilesByPaths(filePaths);
 }
+
+export default NextAPI(handler);
 
 export const config = {
   api: {

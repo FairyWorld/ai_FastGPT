@@ -1,34 +1,9 @@
-import { ModuleItemType } from '../module/type';
-import { AdminFbkType, ChatItemType, moduleDispatchResType } from './type';
+import { OutLinkChatAuthProps } from '../../support/permission/chat';
 
-export type UpdateHistoryProps = {
-  chatId: string;
-  customTitle?: string;
-  top?: boolean;
-};
-
-export type AdminUpdateFeedbackParams = AdminFbkType & {
-  chatItemId: string;
-};
-
-export type InitChatResponse = {
-  chatId: string;
+export type UpdateChatFeedbackProps = OutLinkChatAuthProps & {
   appId: string;
-  app: {
-    userGuideModule?: ModuleItemType;
-    chatModels?: string[];
-    name: string;
-    avatar: string;
-    intro: string;
-    canUse?: boolean;
-  };
-  title: string;
-  variables: Record<string, any>;
-  history: ChatItemType[];
-};
-
-export type ChatHistoryItemResType = moduleDispatchResType & {
-  moduleType: `${FlowNodeTypeEnum}`;
-  moduleName: string;
-  moduleLogo?: string;
+  chatId: string;
+  dataId: string;
+  userBadFeedback?: string;
+  userGoodFeedback?: string;
 };

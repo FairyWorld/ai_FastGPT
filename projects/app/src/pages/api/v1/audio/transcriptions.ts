@@ -1,32 +1,78 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { jsonRes } from '@fastgpt/service/common/response';
-import { authCert } from '@fastgpt/service/support/permission/auth/common';
-import { withNextCors } from '@fastgpt/service/common/middle/cors';
-import { getUploadModel } from '@fastgpt/service/common/file/upload/multer';
+import { getUploadModel } from '@fastgpt/service/common/file/multer';
+import { removeFilesByPaths } from '@fastgpt/service/common/file/utils';
 import fs from 'fs';
-import { getAIApi } from '@fastgpt/service/core/ai/config';
+import { pushWhisperUsage } from '@/service/support/wallet/usage/push';
+import { authChatCrud } from '@/service/support/permission/auth/chat';
+import { OutLinkChatAuthProps } from '@fastgpt/global/support/permission/chat';
+import { NextAPI } from '@/service/middleware/entry';
+import { aiTranscriptions } from '@fastgpt/service/core/ai/audio/transcriptions';
+import { useReqFrequencyLimit } from '@fastgpt/service/common/middle/reqFrequencyLimit';
 
 const upload = getUploadModel({
-  maxSize: 2
+  maxSize: 5
 });
 
-export default withNextCors(async function handler(req: NextApiRequest, res: NextApiResponse<any>) {
+async function handler(req: NextApiRequest, res: NextApiResponse<any>) {
+  let filePaths: string[] = [];
+
   try {
-    const { teamId, tmbId } = await authCert({ req, authToken: true });
+    let {
+      file,
+      data: { appId, duration, shareId, outLinkUid, teamId: spaceTeamId, teamToken }
+    } = await upload.doUpload<
+      OutLinkChatAuthProps & {
+        appId: string;
+        duration: number;
+      }
+    >(req, res);
 
-    const { files } = await upload.doUpload(req, res);
+    req.body.appId = appId;
+    req.body.shareId = shareId;
+    req.body.outLinkUid = outLinkUid;
+    req.body.teamId = spaceTeamId;
+    req.body.teamToken = teamToken;
 
-    const file = files[0];
+    filePaths = [file.path];
+
+    if (!global.whisperModel) {
+      throw new Error('whisper model not found');
+    }
 
     if (!file) {
       throw new Error('file not found');
     }
+    if (duration === undefined) {
+      throw new Error('duration not found');
+    }
+    duration = duration < 1 ? 1 : duration;
 
-    const ai = getAIApi();
+    // auth role
+    const { teamId, tmbId } = await authChatCrud({
+      req,
+      authToken: true,
+      ...req.body
+    });
 
-    const result = await ai.audio.transcriptions.create({
-      file: fs.createReadStream(file.path),
-      model: 'whisper-1'
+    // auth app
+    // const app = await MongoApp.findById(appId, 'modules').lean();
+    // if (!app) {
+    //   throw new Error('app not found');
+    // }
+    // if (!whisperConfig?.open) {
+    //   throw new Error('Whisper is not open in the app');
+    // }
+
+    const result = await aiTranscriptions({
+      model: global.whisperModel.model,
+      fileStream: fs.createReadStream(file.path)
+    });
+
+    pushWhisperUsage({
+      teamId,
+      tmbId,
+      duration
     });
 
     jsonRes(res, {
@@ -39,7 +85,11 @@ export default withNextCors(async function handler(req: NextApiRequest, res: Nex
       error: err
     });
   }
-});
+
+  removeFilesByPaths(filePaths);
+}
+
+export default NextAPI(useReqFrequencyLimit(1, 1), handler);
 
 export const config = {
   api: {

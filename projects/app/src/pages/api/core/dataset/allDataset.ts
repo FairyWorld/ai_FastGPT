@@ -1,38 +1,38 @@
-import type { NextApiRequest, NextApiResponse } from 'next';
-import { jsonRes } from '@fastgpt/service/common/response';
-import { connectToDatabase } from '@/service/mongo';
+import type { NextApiRequest } from 'next';
 import { MongoDataset } from '@fastgpt/service/core/dataset/schema';
-import { getVectorModel } from '@/service/core/ai/model';
-import type { DatasetItemType } from '@fastgpt/global/core/dataset/type.d';
-import { mongoRPermission } from '@fastgpt/global/support/permission/utils';
-import { authUserRole } from '@fastgpt/service/support/permission/auth/user';
+import { getVectorModel } from '@fastgpt/service/core/ai/model';
+import type { DatasetSimpleItemType } from '@fastgpt/global/core/dataset/type.d';
+import { NextAPI } from '@/service/middleware/entry';
+import { ReadPermissionVal } from '@fastgpt/global/support/permission/constant';
+import { authUserPer } from '@fastgpt/service/support/permission/user/auth';
+import { DatasetTypeEnum } from '@fastgpt/global/core/dataset/constants';
 
 /* get all dataset by teamId or tmbId */
-export default async function handler(req: NextApiRequest, res: NextApiResponse<any>) {
-  try {
-    await connectToDatabase();
-    // 凭证校验
-    const { teamId, tmbId, teamOwner, role } = await authUserRole({ req, authToken: true });
+async function handler(req: NextApiRequest): Promise<DatasetSimpleItemType[]> {
+  const { teamId } = await authUserPer({
+    req,
+    authToken: true,
+    authApiKey: true,
+    per: ReadPermissionVal
+  });
 
-    const datasets = await MongoDataset.find({
-      ...mongoRPermission({ teamId, tmbId, role }),
-      type: 'dataset'
-    });
+  const myDatasets = await MongoDataset.find({
+    teamId,
+    type: {
+      $ne: DatasetTypeEnum.folder
+    }
+  })
+    .sort({
+      updateTime: -1
+    })
+    .lean();
 
-    const data = datasets.map((item) => ({
-      ...item.toJSON(),
-      vectorModel: getVectorModel(item.vectorModel),
-      canWrite: String(item.tmbId) === tmbId,
-      isOwner: teamOwner || String(item.tmbId) === tmbId
-    }));
-
-    jsonRes<DatasetItemType[]>(res, {
-      data
-    });
-  } catch (err) {
-    jsonRes(res, {
-      code: 500,
-      error: err
-    });
-  }
+  return myDatasets.map((item) => ({
+    _id: item._id,
+    avatar: item.avatar,
+    name: item.name,
+    vectorModel: getVectorModel(item.vectorModel)
+  }));
 }
+
+export default NextAPI(handler);

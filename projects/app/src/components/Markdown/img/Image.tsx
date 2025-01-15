@@ -1,40 +1,43 @@
 import React, { useState } from 'react';
-import { Image, Skeleton } from '@chakra-ui/react';
+import { Box, ImageProps, Skeleton } from '@chakra-ui/react';
+import MyPhotoView from '@fastgpt/web/components/common/Image/PhotoView';
+import { useBoolean } from 'ahooks';
 
-const MdImage = ({ src }: { src?: string }) => {
-  const [isLoading, setIsLoading] = useState(true);
-  const [succeed, setSucceed] = useState(false);
+const MdImage = ({ src, ...props }: { src?: string } & ImageProps) => {
+  const [isLoaded, { setTrue }] = useBoolean(false);
+
+  const [renderSrc, setRenderSrc] = useState(src);
+
+  if (src?.includes('base64') && !src.startsWith('data:image')) {
+    return <Box>Invalid base64 image</Box>;
+  }
   return (
-    <Skeleton
-      minH="100px"
-      isLoaded={!isLoading}
-      fadeDuration={2}
-      display={'flex'}
-      justifyContent={'center'}
-      my={1}
-    >
-      <Image
-        display={'inline-block'}
+    <Skeleton isLoaded={isLoaded}>
+      <MyPhotoView
         borderRadius={'md'}
-        src={src}
+        src={renderSrc}
         alt={''}
         fallbackSrc={'/imgs/errImg.png'}
         fallbackStrategy={'onError'}
-        cursor={succeed ? 'pointer' : 'default'}
-        loading="eager"
+        loading="lazy"
         objectFit={'contain'}
+        referrerPolicy="no-referrer"
+        minW={'120px'}
+        minH={'120px'}
+        maxH={'500px'}
+        my={1}
+        mx={'auto'}
         onLoad={() => {
-          setIsLoading(false);
-          setSucceed(true);
+          setTrue();
         }}
-        onError={() => setIsLoading(false)}
-        onClick={() => {
-          if (!succeed) return;
-          window.open(src, '_blank');
+        onError={() => {
+          setRenderSrc('/imgs/errImg.png');
+          setTrue();
         }}
+        {...props}
       />
     </Skeleton>
   );
 };
 
-export default React.memo(MdImage);
+export default MdImage;

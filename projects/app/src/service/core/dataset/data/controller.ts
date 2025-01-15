@@ -4,10 +4,15 @@ import {
   PatchIndexesProps,
   UpdateDatasetDataProps
 } from '@fastgpt/global/core/dataset/controller';
-import { deletePgDataById, insertData2Pg, updatePgDataById } from './pg';
-import { Types } from 'mongoose';
-import { DatasetDataIndexTypeEnum } from '@fastgpt/global/core/dataset/constant';
+import { insertDatasetDataVector } from '@fastgpt/service/common/vectorStore/controller';
 import { getDefaultIndex } from '@fastgpt/global/core/dataset/utils';
+import { jiebaSplit } from '@fastgpt/service/common/string/jieba';
+import { deleteDatasetDataVector } from '@fastgpt/service/common/vectorStore/controller';
+import { DatasetDataItemType } from '@fastgpt/global/core/dataset/type';
+import { getVectorModel } from '@fastgpt/service/core/ai/model';
+import { mongoSessionRun } from '@fastgpt/service/common/mongo/sessionRun';
+import { ClientSession } from '@fastgpt/service/common/mongo';
+import { MongoDatasetDataText } from '@fastgpt/service/core/dataset/data/dataTextSchema';
 
 /* insert data.
  * 1. create data id
@@ -21,76 +26,112 @@ export async function insertData2Dataset({
   collectionId,
   q,
   a = '',
+  chunkIndex = 0,
   indexes,
-  model
+  model,
+  session
 }: CreateDatasetDataProps & {
   model: string;
+  session?: ClientSession;
 }) {
   if (!q || !datasetId || !collectionId || !model) {
     return Promise.reject('q, datasetId, collectionId, model is required');
   }
+  if (String(teamId) === String(tmbId)) {
+    return Promise.reject("teamId and tmbId can't be the same");
+  }
 
-  q = q.trim();
-  a = a.trim();
+  const qaStr = getDefaultIndex({ q, a }).text;
 
-  const id = new Types.ObjectId();
-  const qaStr = `${q}\n${a}`.trim();
-
-  // empty indexes check, if empty, create default index
+  // 1. Get vector indexes and insert
+  // Empty indexes check, if empty, create default index
   indexes =
     Array.isArray(indexes) && indexes.length > 0
       ? indexes.map((index) => ({
-          ...index,
+          text: index.text,
           dataId: undefined,
-          defaultIndex: indexes?.length === 1 && index.text === qaStr ? true : index.defaultIndex
+          defaultIndex: index.text.trim() === qaStr
         }))
       : [getDefaultIndex({ q, a })];
 
-  // insert to pg
+  if (!indexes.find((index) => index.defaultIndex)) {
+    indexes.unshift(getDefaultIndex({ q, a }));
+  } else if (q && a && !indexes.find((index) => index.text === q)) {
+    // push a q index
+    indexes.push({
+      defaultIndex: false,
+      text: q
+    });
+  }
+
+  indexes = indexes.slice(0, 6);
+
+  // insert to vector store
   const result = await Promise.all(
     indexes.map((item) =>
-      insertData2Pg({
-        mongoDataId: String(id),
-        input: item.text,
-        model,
+      insertDatasetDataVector({
+        query: item.text,
+        model: getVectorModel(model),
         teamId,
-        tmbId,
         datasetId,
         collectionId
       })
     )
   );
 
-  // create mongo
-  const { _id } = await MongoDatasetData.create({
-    _id: id,
-    teamId,
-    tmbId,
-    datasetId,
-    collectionId,
-    q,
-    a,
-    indexes: indexes.map((item, i) => ({
-      ...item,
-      dataId: result[i].insertId
-    }))
-  });
+  // 2. Create mongo data
+  const [{ _id }] = await MongoDatasetData.create(
+    [
+      {
+        teamId,
+        tmbId,
+        datasetId,
+        collectionId,
+        q,
+        a,
+        // FullText tmp
+        // fullTextToken: jiebaSplit({ text: qaStr }),
+        chunkIndex,
+        indexes: indexes?.map((item, i) => ({
+          ...item,
+          dataId: result[i].insertId
+        }))
+      }
+    ],
+    { session }
+  );
+
+  // 3. Create mongo data text
+  await MongoDatasetDataText.create(
+    [
+      {
+        teamId,
+        datasetId,
+        collectionId,
+        dataId: _id,
+        fullTextToken: jiebaSplit({ text: qaStr })
+      }
+    ],
+    { session }
+  );
 
   return {
     insertId: _id,
-    tokenLen: result.reduce((acc, cur) => acc + cur.tokenLen, 0)
+    tokens: result.reduce((acc, cur) => acc + cur.tokens, 0)
   };
 }
 
 /**
  * update data
  * 1. compare indexes
- * 2. update pg data
- * 3. update mongo data
+ * 2. insert new pg data
+ * session run:
+ *  3. update mongo data(session run)
+ *  4. delete old pg data
  */
 export async function updateData2Dataset({
   dataId,
-  q,
+  q = '',
   a,
   indexes,
   model
@@ -98,31 +139,30 @@ export async function updateData2Dataset({
   if (!Array.isArray(indexes)) {
     return Promise.reject('indexes is required');
   }
-  const qaStr = `${q}\n${a}`.trim();
+  const qaStr = getDefaultIndex({ q, a }).text;
 
   // patch index and update pg
   const mongoData = await MongoDatasetData.findById(dataId);
-  if (!mongoData) return Promise.reject('Data not found');
+  if (!mongoData) return Promise.reject('core.dataset.error.Data not found');
 
-  // make sure have one index
-  if (indexes.length === 0) {
-    const databaseDefaultIndex = mongoData.indexes.find((index) => index.defaultIndex);
-
-    indexes = [
-      getDefaultIndex({
-        q,
-        a,
-        dataId: databaseDefaultIndex ? String(databaseDefaultIndex.dataId) : undefined
-      })
-    ];
+  // remove defaultIndex
+  let formatIndexes = indexes.map((index) => ({
+    ...index,
+    text: index.text.trim(),
+    defaultIndex: index.text.trim() === qaStr
+  }));
+  if (!formatIndexes.find((index) => index.defaultIndex)) {
+    const defaultIndex = mongoData.indexes.find((index) => index.defaultIndex);
+    formatIndexes.unshift(defaultIndex ? defaultIndex : getDefaultIndex({ q, a }));
   }
+  formatIndexes = formatIndexes.slice(0, 6);
 
   // patch indexes, create, update, delete
   const patchResult: PatchIndexesProps[] = [];
 
   // find database indexes in new Indexes, if have not,  delete it
   for (const item of mongoData.indexes) {
-    const index = indexes.find((index) => index.dataId === item.dataId);
+    const index = formatIndexes.find((index) => index.dataId === item.dataId);
     if (!index) {
       patchResult.push({
         type: 'delete',
@@ -130,30 +170,34 @@ export async function updateData2Dataset({
       });
     }
   }
-  for (const item of indexes) {
+  for (const item of formatIndexes) {
     const index = mongoData.indexes.find((index) => index.dataId === item.dataId);
     // in database, update
     if (index) {
-      // manual update index
+      // default index update
+      if (index.defaultIndex && index.text !== qaStr) {
+        patchResult.push({
+          type: 'update',
+          index: {
+            //@ts-ignore
+            ...index.toObject(),
+            text: qaStr
+          }
+        });
+        continue;
+      }
+      // custom index update
       if (index.text !== item.text) {
         patchResult.push({
           type: 'update',
           index: item
         });
-      } else if (index.defaultIndex && index.text !== qaStr) {
-        // update default index
-        patchResult.push({
-          type: 'update',
-          index: {
-            ...item,
-            type:
-              item.type === DatasetDataIndexTypeEnum.qa && !a
-                ? DatasetDataIndexTypeEnum.chunk
-                : item.type,
-            text: qaStr
-          }
-        });
+        continue;
       }
+      patchResult.push({
+        type: 'unChange',
+        index: item
+      });
     } else {
       // not in database, create
       patchResult.push({
@@ -163,73 +207,78 @@ export async function updateData2Dataset({
     }
   }
 
-  const result = await Promise.all(
-    patchResult.map(async (item) => {
-      if (item.type === 'create') {
-        const result = await insertData2Pg({
-          mongoDataId: dataId,
-          input: item.index.text,
-          model,
+  // update mongo updateTime
+  mongoData.updateTime = new Date();
+  await mongoData.save();
+
+  // insert vector
+  const clonePatchResult2Insert: PatchIndexesProps[] = JSON.parse(JSON.stringify(patchResult));
+  const insertResult = await Promise.all(
+    clonePatchResult2Insert.map(async (item) => {
+      // insert new vector and update dateId
+      if (item.type === 'create' || item.type === 'update') {
+        const result = await insertDatasetDataVector({
+          query: item.index.text,
+          model: getVectorModel(model),
           teamId: mongoData.teamId,
-          tmbId: mongoData.tmbId,
           datasetId: mongoData.datasetId,
           collectionId: mongoData.collectionId
         });
         item.index.dataId = result.insertId;
         return result;
       }
-      if (item.type === 'update' && item.index.dataId) {
-        return updatePgDataById({
-          id: item.index.dataId,
-          input: item.index.text,
-          model
-        });
-      }
-      if (item.type === 'delete' && item.index.dataId) {
-        return deletePgDataById(['id', item.index.dataId]);
-      }
       return {
-        tokenLen: 0
+        tokens: 0
       };
     })
   );
+  const tokens = insertResult.reduce((acc, cur) => acc + cur.tokens, 0);
+  // console.log(clonePatchResult2Insert);
+  await mongoSessionRun(async (session) => {
+    // update mongo
+    const newIndexes = clonePatchResult2Insert
+      .filter((item) => item.type !== 'delete')
+      .map((item) => item.index);
+    // update mongo other data
+    mongoData.q = q || mongoData.q;
+    mongoData.a = a ?? mongoData.a;
+    // FullText tmp
+    // mongoData.fullTextToken = jiebaSplit({ text: `${mongoData.q}\n${mongoData.a}`.trim() });
+    // @ts-ignore
+    mongoData.indexes = newIndexes;
+    await mongoData.save({ session });
 
-  const tokenLen = result.reduce((acc, cur) => acc + cur.tokenLen, 0);
+    // update mongo data text
+    await MongoDatasetDataText.updateOne(
+      { dataId: mongoData._id },
+      { fullTextToken: jiebaSplit({ text: `${mongoData.q}\n${mongoData.a}`.trim() }) },
+      { session }
+    );
 
-  // update mongo
-  mongoData.q = q || mongoData.q;
-  mongoData.a = a ?? mongoData.a;
-  // @ts-ignore
-  mongoData.indexes = indexes;
-  await mongoData.save();
+    // delete vector
+    const deleteIdList = patchResult
+      .filter((item) => item.type === 'delete' || item.type === 'update')
+      .map((item) => item.index.dataId)
+      .filter(Boolean);
+    if (deleteIdList.length > 0) {
+      await deleteDatasetDataVector({
+        teamId: mongoData.teamId,
+        idList: deleteIdList as string[]
+      });
+    }
+  });
 
   return {
-    tokenLen
+    tokens
   };
 }
 
-/* delete all data by datasetIds */
-export async function delDataByDatasetId({ datasetIds }: { datasetIds: string[] }) {
-  datasetIds = datasetIds.map((item) => String(item));
-  // delete pg data
-  await deletePgDataById(`dataset_id IN ('${datasetIds.join("','")}')`);
-  // delete dataset.datas
-  await MongoDatasetData.deleteMany({ datasetId: { $in: datasetIds } });
-}
-/**
- * delete all data by collectionIds
- */
-export async function delDataByCollectionId({ collectionIds }: { collectionIds: string[] }) {
-  const ids = collectionIds.map((item) => String(item));
-  // delete pg data
-  await deletePgDataById(`collection_id IN ('${ids.join("','")}')`);
-  // delete dataset.datas
-  await MongoDatasetData.deleteMany({ collectionId: { $in: ids } });
-}
-/**
- * delete one data by mongoDataId
- */
-export async function deleteDataByDataId(mongoDataId: string) {
-  await deletePgDataById(['data_id', mongoDataId]);
-  await MongoDatasetData.findByIdAndDelete(mongoDataId);
-}
+export const deleteDatasetData = async (data: DatasetDataItemType) => {
+  await mongoSessionRun(async (session) => {
+    await MongoDatasetData.findByIdAndDelete(data.id, { session });
+    await deleteDatasetDataVector({
+      teamId: data.teamId,
+      idList: data.indexes.map((item) => item.dataId)
+    });
+  });
+};

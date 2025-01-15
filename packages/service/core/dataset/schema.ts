@@ -1,12 +1,15 @@
-import { connectionMongo, type Model } from '../../common/mongo';
-const { Schema, model, models } = connectionMongo;
-import { DatasetSchemaType } from '@fastgpt/global/core/dataset/type.d';
-import { DatasetTypeMap } from '@fastgpt/global/core/dataset/constant';
+import { getMongoModel, Schema } from '../../common/mongo';
+import {
+  DatasetStatusEnum,
+  DatasetStatusMap,
+  DatasetTypeEnum,
+  DatasetTypeMap
+} from '@fastgpt/global/core/dataset/constants';
 import {
   TeamCollectionName,
   TeamMemberCollectionName
 } from '@fastgpt/global/support/user/team/constant';
-import { PermissionTypeEnum, PermissionTypeMap } from '@fastgpt/global/support/permission/constant';
+import type { DatasetSchemaType } from '@fastgpt/global/core/dataset/type.d';
 
 export const DatasetCollectionName = 'datasets';
 
@@ -31,9 +34,16 @@ const DatasetSchema = new Schema({
     ref: TeamMemberCollectionName,
     required: true
   },
-  updateTime: {
-    type: Date,
-    default: () => new Date()
+  type: {
+    type: String,
+    enum: Object.keys(DatasetTypeMap),
+    required: true,
+    default: DatasetTypeEnum.dataset
+  },
+  status: {
+    type: String,
+    enum: Object.keys(DatasetStatusMap),
+    default: DatasetStatusEnum.active
   },
   avatar: {
     type: String,
@@ -43,37 +53,63 @@ const DatasetSchema = new Schema({
     type: String,
     required: true
   },
+  updateTime: {
+    type: Date,
+    default: () => new Date()
+  },
   vectorModel: {
     type: String,
     required: true,
-    default: 'text-embedding-ada-002'
+    default: 'text-embedding-3-small'
   },
-  type: {
+  agentModel: {
     type: String,
-    enum: Object.keys(DatasetTypeMap),
     required: true,
-    default: 'dataset'
+    default: 'gpt-4o-mini'
   },
-  tags: {
-    type: [String],
-    default: [],
-    set(val: string | string[]) {
-      if (Array.isArray(val)) return val;
-      return val.split(' ').filter((item) => item);
+  intro: {
+    type: String,
+    default: ''
+  },
+  websiteConfig: {
+    type: {
+      url: {
+        type: String,
+        required: true
+      },
+      selector: {
+        type: String,
+        default: 'body'
+      }
     }
   },
-  permission: {
-    type: String,
-    enum: Object.keys(PermissionTypeMap),
-    default: PermissionTypeEnum.private
-  }
+  inheritPermission: {
+    type: Boolean,
+    default: true
+  },
+  apiServer: {
+    type: Object
+  },
+  feishuServer: {
+    type: Object
+  },
+  yuqueServer: {
+    type: Object
+  },
+
+  autoSync: Boolean,
+
+  // abandoned
+  externalReadUrl: {
+    type: String
+  },
+  defaultPermission: Number
 });
 
 try {
-  DatasetSchema.index({ userId: 1 });
+  DatasetSchema.index({ teamId: 1 });
 } catch (error) {
   console.log(error);
 }
 
-export const MongoDataset: Model<DatasetSchemaType> =
-  models[DatasetCollectionName] || model(DatasetCollectionName, DatasetSchema);
+export const MongoDataset = getMongoModel<DatasetSchemaType>(DatasetCollectionName, DatasetSchema);

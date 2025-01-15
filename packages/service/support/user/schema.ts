@@ -1,17 +1,26 @@
-import { connectionMongo, type Model } from '../../common/mongo';
-const { Schema, model, models } = connectionMongo;
+import { connectionMongo, getMongoModel } from '../../common/mongo';
+const { Schema } = connectionMongo;
 import { hashStr } from '@fastgpt/global/common/string/tools';
-import { PRICE_SCALE } from '@fastgpt/global/support/wallet/bill/constants';
 import type { UserModelSchema } from '@fastgpt/global/support/user/type';
+import { UserStatusEnum, userStatusMap } from '@fastgpt/global/support/user/constant';
+import { getRandomUserAvatar } from '@fastgpt/global/support/user/utils';
 
 export const userCollectionName = 'users';
 
 const UserSchema = new Schema({
+  status: {
+    type: String,
+    enum: Object.keys(userStatusMap),
+    default: UserStatusEnum.active
+  },
   username: {
     // 可以是手机/邮箱，新的验证都只用手机
     type: String,
     required: true,
     unique: true // 唯一
+  },
+  phonePrefix: {
+    type: Number
   },
   password: {
     type: String,
@@ -26,29 +35,12 @@ const UserSchema = new Schema({
   },
   avatar: {
     type: String,
-    default: '/icon/human.svg'
+    default: () => getRandomUserAvatar()
   },
-  balance: {
-    type: Number,
-    default: 2 * PRICE_SCALE
-  },
-  inviterId: {
-    // 谁邀请注册的
-    type: Schema.Types.ObjectId,
-    ref: 'user'
-  },
+
   promotionRate: {
     type: Number,
     default: 15
-  },
-  limit: {
-    exportKbTime: {
-      // Every half hour
-      type: Date
-    },
-    datasetMaxCount: {
-      type: Number
-    }
   },
   openaiAccount: {
     type: {
@@ -59,8 +51,25 @@ const UserSchema = new Schema({
   timezone: {
     type: String,
     default: 'Asia/Shanghai'
-  }
+  },
+  lastLoginTmbId: {
+    type: Schema.Types.ObjectId
+  },
+
+  inviterId: {
+    // 谁邀请注册的
+    type: Schema.Types.ObjectId,
+    ref: userCollectionName
+  },
+  fastgpt_sem: Object,
+  sourceDomain: String
 });
 
-export const MongoUser: Model<UserModelSchema> =
-  models[userCollectionName] || model(userCollectionName, UserSchema);
+try {
+  // Admin charts
+  UserSchema.index({ createTime: -1 });
+} catch (error) {
+  console.log(error);
+}
+
+export const MongoUser = getMongoModel<UserModelSchema>(userCollectionName, UserSchema);

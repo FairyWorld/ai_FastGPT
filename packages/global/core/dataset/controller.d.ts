@@ -5,6 +5,7 @@ export type CreateDatasetDataProps = {
   tmbId: string;
   datasetId: string;
   collectionId: string;
+  chunkIndex?: number;
   q: string;
   a?: string;
   indexes?: Omit<DatasetDataIndexItemType, 'dataId'>[];
@@ -20,7 +21,7 @@ export type UpdateDatasetDataProps = {
 };
 
 export type PatchIndexesProps = {
-  type: 'create' | 'update' | 'delete';
+  type: 'create' | 'update' | 'delete' | 'unChange';
   index: Omit<DatasetDataIndexItemType, 'dataId'> & {
     dataId?: string;
   };

@@ -1,275 +1,363 @@
-import React, { useCallback, useState, useRef, useMemo } from 'react';
-import { Box, Card, IconButton, Flex, Grid, Button } from '@chakra-ui/react';
-import { usePagination } from '@/web/common/hooks/usePagination';
+import React, { useState, useMemo } from 'react';
+import { Box, Card, IconButton, Flex, Button, useTheme } from '@chakra-ui/react';
 import {
   getDatasetDataList,
   delOneDatasetDataById,
   getDatasetCollectionById
 } from '@/web/core/dataset/api';
-import { DeleteIcon } from '@chakra-ui/icons';
 import { useQuery } from '@tanstack/react-query';
-import { useToast } from '@/web/common/hooks/useToast';
-import { debounce } from 'lodash';
+import { useToast } from '@fastgpt/web/hooks/useToast';
 import { getErrText } from '@fastgpt/global/common/error/utils';
-import { useConfirm } from '@/web/common/hooks/useConfirm';
+import { useConfirm } from '@fastgpt/web/hooks/useConfirm';
 import { useTranslation } from 'next-i18next';
 import { useRouter } from 'next/router';
-import MyIcon from '@/components/Icon';
+import MyIcon from '@fastgpt/web/components/common/Icon';
 import MyInput from '@/components/MyInput';
-import { useLoading } from '@/web/common/hooks/useLoading';
-import InputDataModal, { RawSourceText, type InputDataType } from '../components/InputDataModal';
-import type { DatasetDataListItemType } from '@/global/core/dataset/type.d';
-import { TabEnum } from '..';
-import { useUserStore } from '@/web/support/user/useUserStore';
-import { TeamMemberRoleEnum } from '@fastgpt/global/support/user/team/constant';
-import { getDefaultIndex } from '@fastgpt/global/core/dataset/utils';
+import InputDataModal from '../components/InputDataModal';
+import RawSourceBox from '@/components/core/dataset/RawSourceBox';
+import { getCollectionSourceData } from '@fastgpt/global/core/dataset/collection/utils';
+import EmptyTip from '@fastgpt/web/components/common/EmptyTip';
+import { DatasetPageContext } from '@/web/core/dataset/context/datasetPageContext';
+import { useContextSelector } from 'use-context-selector';
+import MyTag from '@fastgpt/web/components/common/Tag/index';
+import MyBox from '@fastgpt/web/components/common/MyBox';
+import { useSystem } from '@fastgpt/web/hooks/useSystem';
+import TagsPopOver from './CollectionCard/TagsPopOver';
+import { useSystemStore } from '@/web/common/system/useSystemStore';
+import MyDivider from '@fastgpt/web/components/common/MyDivider';
+import Markdown from '@/components/Markdown';
+import { useMemoizedFn } from 'ahooks';
+import { useScrollPagination } from '@fastgpt/web/hooks/useScrollPagination';
+import { TabEnum } from './NavBar';
+import {
+  DatasetCollectionTypeEnum,
+  ImportDataSourceEnum
+} from '@fastgpt/global/core/dataset/constants';
 
 const DataCard = () => {
-  const BoxRef = useRef<HTMLDivElement>(null);
-  const lastSearch = useRef('');
+  const theme = useTheme();
   const router = useRouter();
-  const { userInfo } = useUserStore();
-  const { collectionId = '' } = router.query as { collectionId: string };
-  const { Loading, setIsLoading } = useLoading({ defaultLoading: true });
+  const { isPc } = useSystem();
+  const { collectionId = '', datasetId } = router.query as {
+    collectionId: string;
+    datasetId: string;
+  };
+  const datasetDetail = useContextSelector(DatasetPageContext, (v) => v.datasetDetail);
+  const { feConfigs } = useSystemStore();
+
   const { t } = useTranslation();
   const [searchText, setSearchText] = useState('');
   const { toast } = useToast();
-  const { openConfirm, ConfirmModal } = useConfirm({
-    content: t('dataset.Confirm to delete the data')
-  });
 
-  const {
-    data: datasetDataList,
-    Pagination,
-    total,
-    getData,
-    pageNum,
-    pageSize
-  } = usePagination<DatasetDataListItemType>({
-    api: getDatasetDataList,
-    pageSize: 24,
-    params: {
+  const scrollParams = useMemo(
+    () => ({
       collectionId,
       searchText
-    },
-    onChange() {
-      setIsLoading(false);
-      if (BoxRef.current) {
-        BoxRef.current.scrollTop = 0;
-      }
-    }
+    }),
+    [collectionId, searchText]
+  );
+  const EmptyTipDom = useMemo(
+    () => <EmptyTip text={t('common:core.dataset.data.Empty Tip')} />,
+    [t]
+  );
+  const {
+    data: datasetDataList,
+    ScrollData,
+    total,
+    refreshList,
+    setData: setDatasetDataList
+  } = useScrollPagination(getDatasetDataList, {
+    pageSize: 15,
+    params: scrollParams,
+    refreshDeps: [searchText, collectionId],
+    EmptyTip: EmptyTipDom
   });
 
-  const [editInputData, setEditInputData] = useState<InputDataType>();
-
-  // get first page data
-  const getFirstData = useCallback(
-    debounce(() => {
-      getData(1);
-      lastSearch.current = searchText;
-    }, 300),
-    []
-  );
+  const [editDataId, setEditDataId] = useState<string>();
 
   // get file info
-  const { data: collection } = useQuery(['getDatasetCollectionById', collectionId], () =>
-    getDatasetCollectionById(collectionId)
+  const { data: collection } = useQuery(
+    ['getDatasetCollectionById', collectionId],
+    () => getDatasetCollectionById(collectionId),
+    {
+      onError: () => {
+        router.replace({
+          query: {
+            datasetId
+          }
+        });
+      }
+    }
   );
 
-  const canWrite = useMemo(
-    () => userInfo?.team?.role !== TeamMemberRoleEnum.visitor && !!collection?.canWrite,
-    [collection?.canWrite, userInfo?.team?.role]
-  );
+  const canWrite = useMemo(() => datasetDetail.permission.hasWritePer, [datasetDetail]);
+
+  const { openConfirm, ConfirmModal } = useConfirm({
+    content: t('common:dataset.Confirm to delete the data'),
+    type: 'delete'
+  });
+  const onDeleteOneData = useMemoizedFn((dataId: string) => {
+    openConfirm(async () => {
+      try {
+        await delOneDatasetDataById(dataId);
+        setDatasetDataList((prev) => {
+          return prev.filter((data) => data._id !== dataId);
+        });
+        toast({
+          title: t('common:common.Delete Success'),
+          status: 'success'
+        });
+      } catch (error) {
+        toast({
+          title: getErrText(error),
+          status: 'error'
+        });
+      }
+    })();
+  });
 
   return (
-    <Box ref={BoxRef} position={'relative'} px={5} py={[1, 5]} h={'100%'} overflow={'overlay'}>
-      <Flex alignItems={'center'}>
-        <IconButton
-          mr={3}
-          icon={<MyIcon name={'backFill'} w={['14px', '18px']} color={'myBlue.600'} />}
-          bg={'white'}
-          boxShadow={'1px 1px 9px rgba(0,0,0,0.15)'}
-          size={'sm'}
-          borderRadius={'50%'}
-          aria-label={''}
-          onClick={() =>
-            router.replace({
-              query: {
-                datasetId: router.query.datasetId,
-                parentId: router.query.parentId,
-                currentTab: TabEnum.collectionCard
-              }
-            })
-          }
-        />
-        <Flex className="textEllipsis" flex={'1 0 0'} mr={[3, 5]} alignItems={'center'}>
-          <Box lineHeight={1.2}>
-            <RawSourceText
-              sourceName={collection?.name}
-              sourceId={collection?.metadata?.fileId || collection?.metadata?.rawLink}
-              fontSize={['md', 'lg']}
-              color={'black'}
-              textDecoration={'none'}
-            />
-            <Box fontSize={'sm'} color={'myGray.500'}>
-              文件ID:{' '}
-              <Box as={'span'} userSelect={'all'}>
-                {collection?._id}
-              </Box>
+    <MyBox py={[1, 0]} h={'100%'}>
+      <Flex flexDirection={'column'} h={'100%'}>
+        {/* Header */}
+        <Flex alignItems={'center'} px={6}>
+          <Box flex={'1 0 0'} mr={[3, 5]} alignItems={'center'}>
+            <Box
+              className="textEllipsis"
+              alignItems={'center'}
+              gap={2}
+              display={isPc ? 'flex' : ''}
+            >
+              {collection?._id && (
+                <RawSourceBox
+                  collectionId={collection._id}
+                  {...getCollectionSourceData(collection)}
+                  fontSize={['sm', 'md']}
+                  color={'black'}
+                  textDecoration={'none'}
+                />
+              )}
             </Box>
+            {feConfigs?.isPlus && !!collection?.tags?.length && (
+              <TagsPopOver currentCollection={collection} />
+            )}
           </Box>
-        </Flex>
-        {canWrite && (
-          <Box>
+          {datasetDetail.type !== 'websiteDataset' && !!collection?.chunkSize && (
             <Button
               ml={2}
-              variant={'base'}
+              variant={'whitePrimary'}
               size={['sm', 'md']}
               onClick={() => {
-                if (!collection) return;
-                setEditInputData({
-                  q: '',
-                  indexes: [getDefaultIndex({ dataId: `${Date.now()}` })]
+                router.push({
+                  query: {
+                    datasetId,
+                    currentTab: TabEnum.import,
+                    source: ImportDataSourceEnum.reTraining,
+                    collectionId
+                  }
                 });
               }}
             >
-              {t('dataset.Insert Data')}
+              {t('dataset:retain_collection')}
             </Button>
-          </Box>
-        )}
-      </Flex>
-      <Flex my={3} alignItems={'center'}>
-        <Box>
-          <Box as={'span'} fontSize={['md', 'lg']}>
-            {total}组
-          </Box>
-        </Box>
-        <Box flex={1} mr={1} />
-        <MyInput
-          leftIcon={
-            <MyIcon name="searchLight" position={'absolute'} w={'14px'} color={'myGray.500'} />
-          }
-          w={['200px', '300px']}
-          placeholder="根据匹配知识，预期答案和来源进行搜索"
-          value={searchText}
-          onChange={(e) => {
-            setSearchText(e.target.value);
-            getFirstData();
-          }}
-          onBlur={() => {
-            if (searchText === lastSearch.current) return;
-            getFirstData();
-          }}
-          onKeyDown={(e) => {
-            if (searchText === lastSearch.current) return;
-            if (e.key === 'Enter') {
-              getFirstData();
-            }
-          }}
-        />
-      </Flex>
-      <Grid
-        minH={'100px'}
-        gridTemplateColumns={['1fr', 'repeat(2,1fr)', 'repeat(3,1fr)']}
-        gridGap={4}
-      >
-        {datasetDataList.map((item) => (
-          <Card
-            key={item._id}
-            cursor={'pointer'}
-            pt={3}
-            userSelect={'none'}
-            boxShadow={'none'}
-            _hover={{ boxShadow: 'lg', '& .delete': { display: 'flex' } }}
-            border={'1px solid '}
-            borderColor={'myGray.200'}
-            onClick={() => {
-              if (!collection) return;
-              setEditInputData({
-                id: item._id,
-                q: item.q,
-                a: item.a,
-                indexes: item.indexes
-              });
-            }}
-          >
-            <Box
-              h={'95px'}
-              overflow={'hidden'}
-              wordBreak={'break-all'}
-              px={3}
-              py={1}
-              fontSize={'13px'}
+          )}
+          {canWrite && (
+            <Button
+              ml={2}
+              variant={'whitePrimary'}
+              size={['sm', 'md']}
+              isDisabled={!collection}
+              onClick={() => {
+                setEditDataId('');
+              }}
             >
-              <Box color={'myGray.1000'} mb={2}>
-                {item.q}
-              </Box>
-              <Box color={'myGray.600'}>{item.a}</Box>
+              {t('common:dataset.Insert Data')}
+            </Button>
+          )}
+        </Flex>
+        <Box justifyContent={'center'} px={6} pos={'relative'} w={'100%'}>
+          <MyDivider my={'17px'} w={'100%'} />
+        </Box>
+        <Flex alignItems={'center'} px={6} pb={4}>
+          <Flex align={'center'} color={'myGray.500'}>
+            <MyIcon name="common/list" mr={2} w={'18px'} />
+            <Box as={'span'} fontSize={['sm', '14px']} fontWeight={'500'}>
+              {t('common:core.dataset.data.Total Amount', { total })}
             </Box>
-            <Flex py={2} px={4} h={'36px'} alignItems={'flex-end'} fontSize={'sm'}>
-              <Box className={'textEllipsis'} flex={1} color={'myGray.500'}>
-                ID:{item._id}
-              </Box>
-              {canWrite && (
-                <IconButton
-                  className="delete"
-                  display={['flex', 'none']}
-                  icon={<DeleteIcon />}
-                  variant={'base'}
-                  colorScheme={'gray'}
-                  aria-label={'delete'}
-                  size={'xs'}
-                  borderRadius={'md'}
-                  _hover={{ color: 'red.600' }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openConfirm(async () => {
-                      try {
-                        setIsLoading(true);
-                        await delOneDatasetDataById(item._id);
-                        getData(pageNum);
-                      } catch (error) {
-                        toast({
-                          title: getErrText(error),
-                          status: 'error'
-                        });
-                      }
-                      setIsLoading(false);
-                    })();
-                  }}
-                />
-              )}
-            </Flex>
-          </Card>
-        ))}
-      </Grid>
-
-      {total > pageSize && (
-        <Flex mt={2} justifyContent={'center'}>
-          <Pagination />
+          </Flex>
+          <Box flex={1} mr={1} />
+          <MyInput
+            leftIcon={
+              <MyIcon
+                name="common/searchLight"
+                position={'absolute'}
+                w={'14px'}
+                color={'myGray.600'}
+              />
+            }
+            bg={'myGray.25'}
+            borderColor={'myGray.200'}
+            color={'myGray.500'}
+            w={['200px', '300px']}
+            placeholder={t('common:core.dataset.data.Search data placeholder')}
+            value={searchText}
+            onChange={(e) => {
+              setSearchText(e.target.value);
+            }}
+          />
         </Flex>
-      )}
-      {total === 0 && (
-        <Flex flexDirection={'column'} alignItems={'center'} pt={'10vh'}>
-          <MyIcon name="empty" w={'48px'} h={'48px'} color={'transparent'} />
-          <Box mt={2} color={'myGray.500'}>
-            内容空空的，快创建一个吧！
-          </Box>
-        </Flex>
-      )}
+        {/* data */}
+        <ScrollData px={5} pb={5}>
+          <Flex flexDir={'column'} gap={2}>
+            {datasetDataList.map((item, index) => (
+              <Card
+                key={item._id}
+                cursor={'pointer'}
+                p={3}
+                userSelect={'none'}
+                boxShadow={'none'}
+                bg={index % 2 === 1 ? 'myGray.50' : 'blue.50'}
+                border={theme.borders.sm}
+                position={'relative'}
+                overflow={'hidden'}
+                _hover={{
+                  borderColor: 'blue.600',
+                  boxShadow: 'lg',
+                  '& .header': { visibility: 'visible' },
+                  '& .footer': { visibility: 'visible' },
+                  bg: index % 2 === 1 ? 'myGray.200' : 'blue.100'
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setEditDataId(item._id);
+                }}
+              >
+                {/* Data tag */}
+                <Flex
+                  position={'absolute'}
+                  zIndex={1}
+                  alignItems={'center'}
+                  visibility={'hidden'}
+                  className="header"
+                >
+                  <MyTag
+                    px={2}
+                    type="borderFill"
+                    borderRadius={'sm'}
+                    border={'1px'}
+                    color={'myGray.200'}
+                    bg={'white'}
+                    fontWeight={'500'}
+                  >
+                    <Box color={'blue.600'}>#{item.chunkIndex ?? '-'} </Box>
+                    <Box
+                      ml={1.5}
+                      className={'textEllipsis'}
+                      fontSize={'mini'}
+                      textAlign={'right'}
+                      color={'myGray.500'}
+                    >
+                      ID:{item._id}
+                    </Box>
+                  </MyTag>
+                </Flex>
 
-      {editInputData !== undefined && collection && (
+                {/* Data content */}
+                <Box wordBreak={'break-all'} fontSize={'sm'}>
+                  <Markdown source={item.q} isDisabled />
+                  {!!item.a && (
+                    <>
+                      <MyDivider />
+                      <Markdown source={item.a} isDisabled />
+                    </>
+                  )}
+                </Box>
+
+                {/* Mask */}
+                <Flex
+                  className="footer"
+                  position={'absolute'}
+                  bottom={2}
+                  right={2}
+                  overflow={'hidden'}
+                  alignItems={'flex-end'}
+                  visibility={'hidden'}
+                  fontSize={'mini'}
+                >
+                  <Flex
+                    alignItems={'center'}
+                    bg={'white'}
+                    color={'myGray.600'}
+                    borderRadius={'sm'}
+                    border={'1px'}
+                    borderColor={'myGray.200'}
+                    h={'24px'}
+                    px={2}
+                    fontSize={'mini'}
+                    boxShadow={'1'}
+                    py={1}
+                    mr={2}
+                  >
+                    <MyIcon
+                      bg={'white'}
+                      color={'myGray.600'}
+                      borderRadius={'sm'}
+                      border={'1px'}
+                      borderColor={'myGray.200'}
+                      name="common/text/t"
+                      w={'14px'}
+                      mr={1}
+                    />
+                    {item.q.length + (item.a?.length || 0)}
+                  </Flex>
+                  {canWrite && (
+                    <IconButton
+                      display={'flex'}
+                      p={1}
+                      boxShadow={'1'}
+                      icon={<MyIcon name={'common/trash'} w={'14px'} color={'myGray.600'} />}
+                      variant={'whiteDanger'}
+                      size={'xsSquare'}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeleteOneData(item._id);
+                      }}
+                      aria-label={''}
+                    />
+                  )}
+                </Flex>
+              </Card>
+            ))}
+          </Flex>
+        </ScrollData>
+      </Flex>
+
+      {editDataId !== undefined && collection && (
         <InputDataModal
           collectionId={collection._id}
-          defaultValue={editInputData}
-          onClose={() => setEditInputData(undefined)}
-          onSuccess={() => getData(pageNum)}
-          onDelete={() => getData(pageNum)}
+          dataId={editDataId}
+          onClose={() => setEditDataId(undefined)}
+          onSuccess={(data) => {
+            if (editDataId === '') {
+              refreshList();
+              return;
+            }
+            setDatasetDataList((prev) => {
+              return prev.map((item) => {
+                if (item._id === editDataId) {
+                  return {
+                    ...item,
+                    ...data
+                  };
+                }
+                return item;
+              });
+            });
+          }}
         />
       )}
       <ConfirmModal />
-      <Loading fixed={false} />
-    </Box>
+    </MyBox>
   );
 };
 

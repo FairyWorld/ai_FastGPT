@@ -1,11 +1,11 @@
 import { getDatasets, getDatasetPaths } from '@/web/core/dataset/api';
-import MyModal from '@/components/MyModal';
+import MyModal from '@fastgpt/web/components/common/MyModal';
 import { useQuery } from '@tanstack/react-query';
 import React, { Dispatch, useMemo, useState } from 'react';
 import { useTranslation } from 'next-i18next';
-import { useSystemStore } from '@/web/common/system/useSystemStore';
-import { Box, Flex, ModalHeader } from '@chakra-ui/react';
-import MyIcon from '@/components/Icon';
+import { Box } from '@chakra-ui/react';
+import ParentPaths from '@/components/common/ParentPaths';
+import MyBox from '@fastgpt/web/components/common/MyBox';
 
 type PathItemType = {
   parentId: string;
@@ -14,103 +14,74 @@ type PathItemType = {
 
 const DatasetSelectContainer = ({
   isOpen,
-  parentId,
   setParentId,
   paths,
   onClose,
   tips,
+  isLoading,
   children
 }: {
   isOpen: boolean;
-  parentId?: string;
   setParentId: Dispatch<string>;
   paths: PathItemType[];
   onClose: () => void;
   tips?: string | null;
+  isLoading?: boolean;
   children: React.ReactNode;
 }) => {
   const { t } = useTranslation();
-  const { isPc } = useSystemStore();
 
   return (
-    <MyModal isOpen={isOpen} onClose={onClose} w={'100%'} maxW={['90vw', '900px']} isCentered>
-      <Flex flexDirection={'column'} h={'90vh'}>
-        <ModalHeader>
-          {!!parentId ? (
-            <Flex
-              flex={1}
-              userSelect={'none'}
-              fontSize={['sm', 'lg']}
-              fontWeight={'normal'}
-              color={'myGray.900'}
-            >
-              {paths.map((item, i) => (
-                <Flex key={item.parentId} mr={2} alignItems={'center'}>
-                  <Box
-                    fontSize={'lg'}
-                    borderRadius={'md'}
-                    {...(i === paths.length - 1
-                      ? {
-                          cursor: 'default'
-                        }
-                      : {
-                          cursor: 'pointer',
-                          _hover: {
-                            color: 'myBlue.600'
-                          },
-                          onClick: () => {
-                            setParentId(item.parentId);
-                          }
-                        })}
-                  >
-                    {item.parentName}
-                  </Box>
-                  {i !== paths.length - 1 && (
-                    <MyIcon name={'rightArrowLight'} color={'myGray.500'} w={['18px', '24px']} />
-                  )}
-                </Flex>
-              ))}
-            </Flex>
-          ) : (
-            <Box>{t('chat.Select Mark Kb')}</Box>
-          )}
+    <MyModal
+      iconSrc="/imgs/workflow/db.png"
+      title={
+        <Box fontWeight={'normal'}>
+          <ParentPaths
+            paths={paths.map((path, i) => ({
+              parentId: path.parentId,
+              parentName: path.parentName
+            }))}
+            FirstPathDom={t('common:core.chat.Select dataset')}
+            onClick={(e) => {
+              setParentId(e);
+            }}
+          />
           {!!tips && (
             <Box fontSize={'sm'} color={'myGray.500'} fontWeight={'normal'}>
               {tips}
             </Box>
           )}
-        </ModalHeader>
-        <Box flex={'1 0 0'}>{children}</Box>
-      </Flex>
+        </Box>
+      }
+      isOpen={isOpen}
+      onClose={onClose}
+      h={'80vh'}
+      w={'100%'}
+      maxW={['90vw', '900px']}
+      isCentered
+    >
+      <MyBox isLoading={isLoading} h={'100%'}>
+        {children}
+      </MyBox>
     </MyModal>
   );
 };
 
 export function useDatasetSelect() {
-  const { t } = useTranslation();
-  const [parentId, setParentId] = useState<string>();
+  const [parentId, setParentId] = useState<string>('');
 
-  const { data, isLoading } = useQuery(['loadDatasetData', parentId], () =>
+  const { data, isFetching } = useQuery(['loadDatasetData', parentId], () =>
     Promise.all([getDatasets({ parentId }), getDatasetPaths(parentId)])
   );
 
-  const paths = useMemo(
-    () => [
-      {
-        parentId: '',
-        parentName: t('dataset.My Dataset')
-      },
-      ...(data?.[1] || [])
-    ],
-    [data, t]
-  );
+  const paths = useMemo(() => [...(data?.[1] || [])], [data]);
 
   return {
     parentId,
     setParentId,
     datasets: data?.[0] || [],
     paths,
-    isLoading
+    isFetching
   };
 }
 

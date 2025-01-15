@@ -2,7 +2,7 @@
 <div id="top-header" class="top-header d-print-none">
     <div class="header-bar d-flex justify-content-between">
         <div class="d-flex align-items-center">
-            <a href='{{ relLangURL "" }}' class="logo-icon me-3" aria-label="HomePage" alt="HomePage">
+            <a href='{{ with .Site.Params.docs.logoLinkURL }}{{ . }}{{ else }}{{ relLangURL "" }}{{ end }}' class="logo-icon me-3" aria-label="HomePage" alt="HomePage">
                 <div class="small">
                     {{ with resources.Get "images/logos/mark.svg" }}
                             {{ .Content | safeHTML }}
@@ -52,7 +52,12 @@
                     {{ $path := printf "images/social/%s.%s" . "svg" }}
                     <li class="list-inline-item mb-0">
                         <!-- change -->
-                        <a href="{{ if eq . `rss` }} {{ `index.xml` | absURL }} {{ else if eq . `wechat` }} {{ index site.Params.social . | absURL }}  {{ else }} https://{{ . }}.com/{{ index site.Params.social . }} {{ end }}" alt="{{ . }}" rel="noopener noreferrer" target="_blank">
+                        <a href="{{ if eq . `rss` }} {{ `index.xml` | absURL }} 
+                             {{ else if eq . `wechat` }} {{ index site.Params.social . | absURL }}  
+                             {{ else if eq . `lark` }} {{ index site.Params.social .  | absURL }}
+                             {{ else }} https://{{ . }}.com/{{ index site.Params.social . }} 
+                             {{ end }}" 
+                           alt="{{ . }}" rel="noopener noreferrer" target="_blank">
                             <div class="btn btn-icon btn-default border-0">
                                 {{ with resources.Get $path }}
                                     {{ .Content | safeHTML }}

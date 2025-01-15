@@ -2,13 +2,20 @@ import { create } from 'zustand';
 import { devtools, persist } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 import type { SearchDataResponseItemType } from '@fastgpt/global/core/dataset/type';
+import { DatasetSearchModeEnum } from '@fastgpt/global/core/dataset/constants';
 
 export type SearchTestStoreItemType = {
   id: string;
   datasetId: string;
   text: string;
   time: Date;
+  duration: string;
   results: SearchDataResponseItemType[];
+  searchMode: `${DatasetSearchModeEnum}`;
+  limit: number;
+  usingReRank: boolean;
+  similarity: number;
+  queryExtensionModel?: string;
 };
 
 type State = {
@@ -25,7 +32,7 @@ export const useSearchTestStore = create<State>()(
         datasetTestList: [],
         pushDatasetTestItem(data) {
           set((state) => {
-            state.datasetTestList = [data, ...state.datasetTestList].slice(0, 100);
+            state.datasetTestList = [data, ...state.datasetTestList].slice(0, 50);
           });
         },
         delDatasetTestItemById(id) {

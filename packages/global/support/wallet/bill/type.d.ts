@@ -1,24 +1,45 @@
-import { CreateBillProps } from './api';
-import { BillSourceEnum } from './constants';
-
-export type BillListItemType = {
-  moduleName: string;
-  amount: number;
-  model?: string;
-  tokenLen?: number;
-};
-
-export type BillSchema = CreateBillProps & {
+import { StandardSubLevelEnum, SubModeEnum, SubTypeEnum } from '../sub/constants';
+import { BillPayWayEnum, BillTypeEnum } from './constants';
+import { TeamInvoiceHeaderType } from '../../user/team/type';
+export type BillSchemaType = {
   _id: string;
-  time: Date;
+  userId: string;
+  teamId: string;
+  tmbId: string;
+  createTime: Date;
+  orderId: string;
+  status: 'SUCCESS' | 'REFUND' | 'NOTPAY' | 'CLOSED';
+  type: BillTypeEnum;
+  price: number;
+  hasInvoice: boolean;
+  metadata: {
+    payWay: `${BillPayWayEnum}`;
+    subMode?: `${SubModeEnum}`;
+    standSubLevel?: `${StandardSubLevelEnum}`;
+    month?: number;
+    datasetSize?: number;
+    extraPoints?: number;
+  };
 };
 
-export type BillItemType = {
-  id: string;
-  memberName: string;
-  time: Date;
-  appName: string;
-  source: BillSchema['source'];
-  total: number;
-  list: BillSchema['list'];
+export type ChatNodeUsageType = {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalPoints: number;
+  moduleName: string;
+  model?: string;
 };
+
+export type InvoiceType = {
+  amount: number;
+  billIdList: string[];
+} & TeamInvoiceHeaderType;
+
+export type InvoiceSchemaType = {
+  _id: string;
+  teamId: string;
+  status: 1 | 2;
+  createTime: Date;
+  finishTime?: Date;
+  file?: Buffer;
+} & InvoiceType;

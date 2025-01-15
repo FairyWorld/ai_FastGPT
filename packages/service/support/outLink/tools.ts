@@ -1,36 +1,38 @@
 import axios from 'axios';
 import { MongoOutLink } from './schema';
+import { FastGPTProUrl } from '../../common/system/constants';
+import { ChatHistoryItemResType } from '@fastgpt/global/core/chat/type';
 
-export const updateOutLinkUsage = async ({
+export const addOutLinkUsage = async ({
   shareId,
-  total
+  totalPoints
 }: {
   shareId: string;
-  total: number;
+  totalPoints: number;
 }) => {
-  try {
-    await MongoOutLink.findOneAndUpdate(
-      { shareId },
-      {
-        $inc: { total },
-        lastTime: new Date()
-      }
-    );
-  } catch (err) {
+  MongoOutLink.findOneAndUpdate(
+    { shareId },
+    {
+      $inc: { usagePoints: totalPoints },
+      lastTime: new Date()
+    }
+  ).catch((err) => {
     console.log('update shareChat error', err);
-  }
+  });
 };
 
 export const pushResult2Remote = async ({
-  authToken,
+  outLinkUid,
   shareId,
-  responseData
+  appName,
+  flowResponses
 }: {
-  authToken?: string;
+  outLinkUid?: string; // raw id, not parse
   shareId?: string;
-  responseData?: any[];
+  appName: string;
+  flowResponses?: ChatHistoryItemResType[];
 }) => {
-  if (!shareId || !authToken || !global.systemEnv.pluginBaseUrl) return;
+  if (!shareId || !outLinkUid || !FastGPTProUrl) return;
   try {
     const outLink = await MongoOutLink.findOne({
       shareId
@@ -42,8 +44,9 @@ export const pushResult2Remote = async ({
       baseURL: outLink.limit.hookUrl,
       url: '/shareAuth/finish',
       data: {
-        token: authToken,
-        responseData
+        token: outLinkUid,
+        appName,
+        responseData: flowResponses
       }
     });
   } catch (error) {}

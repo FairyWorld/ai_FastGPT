@@ -1,15 +1,16 @@
-baseURL = "/"
+baseURL = "https://doc.tryfastgpt.ai"
 languageCode = "en-GB"
 contentDir = "content"
 enableEmoji = true
 enableGitInfo = false # N.B. .GitInfo does not currently function with git submodule content directories
 
 defaultContentLanguage = 'zh-cn'
+defaultContentLanguageInSubdir = false
 [languages]
   [languages.zh-cn]
     title = "FastGPT"
     languageName = "简体中文"
-    #contentDir = "content/zh-cn"
+    contentDir = "content/zh-cn"
     weight = 10
   [languages.en]
     title = "FastGPT Docs"
@@ -55,8 +56,8 @@ defaultContentLanguage = 'zh-cn'
     ["JetBrains Mono", "500, 700"]
   ]
 
-  sans_serif_font = "LXGW WenKai Screen"     # Default is System font
-  secondary_font  = "LXGW WenKai Screen"     # Default is System font
+  #sans_serif_font = "LXGW WenKai Screen"     # Default is System font
+  #secondary_font  = "LXGW WenKai Screen"     # Default is System font
   mono_font       = "JetBrains Mono" # Default is System font
 
     [params.footer]
@@ -68,7 +69,8 @@ defaultContentLanguage = 'zh-cn'
         # twitter = ""       # YOUR_TWITTER_ID
         # instagram = "colinwilson"     # YOUR_INSTAGRAM_ID
         # rss = true                    # show rss icon with link
-        wechat = "/wechat-fastgpt.webp"
+        lark = "https://oss.laf.run/otnvvf-imgs/fastgpt-feishu1.png"
+        wechat = "https://oss.laf.run/htr4n1-images/fastgpt-qr-code.jpg"
 
     [params.docs] # Parameters for the /docs 'template'
         title           = ""           # default html title for documentation pages/sections
@@ -108,6 +110,11 @@ defaultContentLanguage = 'zh-cn'
         navDescTrunc    = 30                                  # Number of characters by which to truncate the Prev/Next descriptions
 
         listDescTrunc   = 100                                 # Number of characters by which to truncate the list card description
+
+        # Link behaviour
+        intLinkTooltip  = true                                # Enable a tooltip for internal links that displays info about the destination? default false
+        # extLinkNewTab   = false                             # Open external links in a new Tab? default true
+        logoLinkURL = "https://tryfastgpt.ai/"                                    # Set a custom URL destination for the top header logo link.
 
     [params.flexsearch] # Parameters for FlexSearch
         # enabled             = true
@@ -150,6 +157,11 @@ defaultContentLanguage = 'zh-cn'
         #   ["Code sample errors", "One or more code samples are incorrect."],
         #   ["Something else"]
         # ]
+
+    [params.umamiAnalytics]
+      websiteid = "69b3f2c6-39a5-4937-b92d-6fdd5c8f5958"
+      domain = "umami.fastgpt.in"
+      scriptName = "fastgpt"
 
 [menu]
 [[menu.primary]]

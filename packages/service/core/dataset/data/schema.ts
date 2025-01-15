@@ -1,4 +1,4 @@
-import { connectionMongo, type Model } from '../../../common/mongo';
+import { connectionMongo, getMongoModel } from '../../../common/mongo';
 const { Schema, model, models } = connectionMongo;
 import { DatasetDataSchemaType } from '@fastgpt/global/core/dataset/type.d';
 import {
@@ -7,9 +7,8 @@ import {
 } from '@fastgpt/global/support/user/team/constant';
 import { DatasetCollectionName } from '../schema';
 import { DatasetColCollectionName } from '../collection/schema';
-import { DatasetDataIndexTypeMap } from '@fastgpt/global/core/dataset/constant';
 
-export const DatasetDataCollectionName = 'dataset.datas';
+export const DatasetDataCollectionName = 'dataset_datas';
 
 const DatasetDataSchema = new Schema({
   teamId: {
@@ -47,11 +46,6 @@ const DatasetDataSchema = new Schema({
           type: Boolean,
           default: false
         },
-        type: {
-          type: String,
-          enum: Object.keys(DatasetDataIndexTypeMap),
-          required: true
-        },
         dataId: {
           type: String,
           required: true
@@ -63,16 +57,46 @@ const DatasetDataSchema = new Schema({
       }
     ],
     default: []
-  }
+  },
+
+  updateTime: {
+    type: Date,
+    default: () => new Date()
+  },
+  chunkIndex: {
+    type: Number,
+    default: 0
+  },
+  rebuilding: Boolean,
+
+  // Abandon
+  fullTextToken: String,
+  initFullText: Boolean
 });
 
 try {
-  DatasetDataSchema.index({ userId: 1 });
-  DatasetDataSchema.index({ datasetId: 1 });
-  DatasetDataSchema.index({ collectionId: 1 });
+  // list collection and count data; list data; delete collection(relate data)
+  DatasetDataSchema.index({
+    teamId: 1,
+    datasetId: 1,
+    collectionId: 1,
+    chunkIndex: 1,
+    updateTime: -1
+  });
+  // FullText tmp full text index
+  // DatasetDataSchema.index({ teamId: 1, datasetId: 1, fullTextToken: 'text' });
+  // Recall vectors after data matching
+  DatasetDataSchema.index({ teamId: 1, datasetId: 1, collectionId: 1, 'indexes.dataId': 1 });
+  DatasetDataSchema.index({ updateTime: 1 });
+  // rebuild data
+  DatasetDataSchema.index({ rebuilding: 1, teamId: 1, datasetId: 1 });
+
+  DatasetDataSchema.index({ initFullText: 1 });
 } catch (error) {
   console.log(error);
 }
 
-export const MongoDatasetData: Model<DatasetDataSchemaType> =
-  models[DatasetDataCollectionName] || model(DatasetDataCollectionName, DatasetDataSchema);
+export const MongoDatasetData = getMongoModel<DatasetDataSchemaType>(
+  DatasetDataCollectionName,
+  DatasetDataSchema
+);

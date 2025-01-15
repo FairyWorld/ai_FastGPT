@@ -1,26 +1,30 @@
-import { PgDatasetTableName } from '@fastgpt/global/core/dataset/constant';
-import { PgClient } from '@fastgpt/service/common/pg';
+import { MongoDatasetData } from '@fastgpt/service/core/dataset/data/schema';
 
 /**
  * Same value judgment
  */
 export async function hasSameValue({
+  teamId,
+  datasetId,
   collectionId,
   q,
   a = ''
 }: {
+  teamId: string;
+  datasetId: string;
   collectionId: string;
   q: string;
   a?: string;
 }) {
-  const { rows: existsRows } = await PgClient.query(`
-  SELECT COUNT(*) > 0 AS exists
-  FROM  ${PgDatasetTableName} 
-  WHERE md5(q)=md5('${q}') AND md5(a)=md5('${a}') AND collection_id='${collectionId}'
-`);
-  const exists = existsRows[0]?.exists || false;
+  const count = await MongoDatasetData.countDocuments({
+    teamId,
+    datasetId,
+    collectionId,
+    q,
+    a
+  });
 
-  if (exists) {
+  if (count > 0) {
     return Promise.reject('已经存在完全一致的数据');
   }
 }
